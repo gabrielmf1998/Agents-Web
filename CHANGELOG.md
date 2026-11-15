@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0 (2026-11-15)
+
+New
+
+- **Continue on another account.** When a Claude reply stops because the account reached its usage limit,
+  a card offers "Continue on <account>" for every other Claude account, with how much of its 5-hour limit
+  is used. One click moves the conversation and Claude picks up where it stopped.
+- The Account chip of a Claude chat now works after the first message too. The CLI session (transcript,
+  subagents, file history) moves to the config folder of the new account, where `claude --resume` finds
+  it. A session another chat of the old account still uses is copied instead of moved.
+- New endpoint `POST /api/chats/<id>/conta`.
+
 ## 1.4.1 (2026-11-15)
 
 Fixes

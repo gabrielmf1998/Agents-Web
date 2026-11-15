@@ -14,7 +14,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 ## Features
 
 - **Both agents, one page.** Switch between Claude Code and Antigravity per chat, each with its own theme.
-- **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices.
+- **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices. When one account reaches its usage limit, the chat offers to continue the same conversation on another one.
 - **Real usage limits.** Shows session and weekly limits as reported by the CLIs themselves, plus tokens per model.
 - **Terminal conversations.** Your existing `claude` and `agy` sessions show up in the sidebar. You can open, continue, rename or delete them, and a Claude chat can move to another working folder.
 - **Rich replies.** Markdown with tables, live previews of `html` and `svg` blocks in a sandboxed frame that follows the page theme, and inline images, videos, audio and PDFs for absolute file paths the agent mentions.
@@ -95,6 +95,12 @@ If your firewall blocks the port, open it for your LAN. On firewalld:
 account. **Add account** creates an extra Claude login with its own config folder
 (`CLAUDE_CONFIG_DIR`), and **Sign in** opens a terminal for it. Antigravity uses the single Google
 account of the `agy` CLI.
+
+A Claude chat can change account at any time from the Account chip in its header, history included: the
+CLI session moves to the config folder of the new account and the next message resumes it there. When a
+reply stops because the account reached its usage limit, a card under it offers **Continue on <account>**
+for each other Claude account, with how much of its 5-hour limit is used, and continues the conversation
+there with one click. Antigravity conversations stay with their account.
 
 ### Permissions
 

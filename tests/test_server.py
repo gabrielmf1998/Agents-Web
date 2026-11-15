@@ -523,6 +523,49 @@ class TestServidor(unittest.TestCase):
         self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 0}, esperado=400)
 
     # ---------------------------------------------------------------- app
+    def test_mover_para_outra_conta(self):
+        segunda = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Second Test"})
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hello"})
+        self.s.espera_parado(c["id"])
+        # a session of its own (the fake CLI always answers with the same id, which other chats share)
+        sid = "7e1d2c3b-4a59-4687-9a0b-c1d2e3f4a5b6"
+        arq = self.s.home / ".local/share/agents-web/chats" / f"{c['id']}.json"
+        d = json.loads(arq.read_text())
+        d["sessao"] = sid
+        arq.write_text(json.dumps(d))
+        org = self.s.home / ".claude/projects/-tmp-x" / f"{sid}.jsonl"
+        org.parent.mkdir(parents=True, exist_ok=True)
+        org.write_text('{"type":"user"}\n')
+        (org.parent / sid / "subagents").mkdir(parents=True)
+        r = self.s.api(f"/api/chats/{c['id']}/conta", {"conta": segunda["id"]})
+        self.assertEqual(r["conta"], segunda["id"])
+        dst = self.s.home / ".config/agents-web/contas" / segunda["id"] / "projects/-tmp-x"
+        self.assertEqual((dst / f"{sid}.jsonl").read_text(), '{"type":"user"}\n')
+        self.assertTrue((dst / sid / "subagents").is_dir())
+        self.assertFalse(org.exists())
+        # the next message resumes the same session, now on the other account
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "go on"})
+        self.s.espera_parado(c["id"])
+        ultimo = self.s.args_claude()[-1]
+        self.assertEqual(ultimo[ultimo.index("--resume") + 1], sid)
+        # a session another chat of the old account still uses is copied, not moved
+        outro = self.novo_chat()
+        self.s.api(f"/api/chats/{outro['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(outro["id"])
+        comum = self.s.home / ".claude/projects/-tmp-y" / f"{SID}.jsonl"
+        comum.parent.mkdir(parents=True, exist_ok=True)
+        comum.write_text("{}\n")
+        terceiro = self.novo_chat()
+        self.s.api(f"/api/chats/{terceiro['id']}/enviar", {"texto": "hey"})
+        self.s.espera_parado(terceiro["id"])
+        self.s.api(f"/api/chats/{terceiro['id']}/conta", {"conta": segunda["id"]})
+        self.assertTrue(comum.exists())
+        self.assertTrue((self.s.home / ".config/agents-web/contas" / segunda["id"] / "projects/-tmp-y" / f"{SID}.jsonl").exists())
+        # Antigravity chats and unknown accounts are refused
+        st, b, _ = self.s.pedir("POST", f"/api/chats/{c['id']}/conta", {"conta": "nope"}, {"X-Token": self.s.token})
+        self.assertEqual(st, 400)
+
     def test_manifesto_e_icones(self):
         st, b, cab = self.s.pedir("GET", "/manifest.webmanifest")
         self.assertEqual(st, 200)

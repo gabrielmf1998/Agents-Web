@@ -168,6 +168,7 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/duplicar` | POST | copy a chat |
 | `chats/<id>/reenviar` | POST | edit or retry message `indice` (`texto`, or `null` to resend it as it was) |
 | `chats/<id>/bifurcar` | POST | a new chat that continues from reply `indice` |
+| `chats/<id>/conta` | POST | continue a Claude chat on another Claude account (`conta`), moving its CLI session |
 | `chats/<id>/permitidos` | POST | forget the always allowed tools (`tirar`: one name, or all) |
 | `chats/<id>/apagar`, `chats/apagar` | POST | delete one or several chats, optionally with their files and CLI sessions |
 | `fixar` | POST | pin or unpin a chat |

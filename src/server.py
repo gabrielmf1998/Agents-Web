@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.4.1"
+VERSAO = "1.5.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 # AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
@@ -1336,6 +1336,64 @@ def bifurcar(cid, i):
         n["fork"] = {"em": em}
         gravar_chat(n)
     return n
+
+
+def mover_conta(cid, destino):
+    """Continue a Claude chat on another Claude account. The CLI keeps a session in the config folder of the
+    account that ran it, so its transcript (and the ones of earlier edits) moves along to the new folder,
+    where `--resume` finds it. A session another web chat still uses there is copied instead of moved."""
+    with trava:
+        ex = EXECS.get(cid)
+        if ex and not ex.acabou:
+            raise ValueError("stop the current reply first")
+        c = ler_chat(cid)
+        if c["agente"] != "claude":
+            raise ValueError("only Claude chats can change account")
+        de, para = conta_por_id(c.get("conta", "")), conta_por_id(destino or "")
+        if not para or para["agente"] != "claude":
+            raise ValueError("account not found")
+        if de and de["id"] == para["id"]:
+            return c
+        sids = [x for x in dict.fromkeys([c.get("sessao") or ""] + list(c.get("antigas") or []))
+                if SID_RE.fullmatch(x or "")]
+        if de and sids:
+            if dir_claude(de).resolve() == dir_claude(para).resolve():
+                sids = []          # two names for the same login folder: nothing to move
+            elif c.get("sessao") in ativas_claude(de):
+                raise ValueError("this conversation is open in a terminal right now. Close it there first")
+        outros = set()
+        if de and sids:
+            for q in CHATS.glob("*.json"):
+                if q.stem == cid:
+                    continue
+                try:
+                    o = json.loads(q.read_text())
+                except Exception:
+                    continue
+                if o.get("conta") == de["id"]:
+                    outros.update([o.get("sessao") or ""] + list(o.get("antigas") or []))
+        movidos = 0
+        if de and sids:
+            a, b = dir_claude(de), dir_claude(para)
+            for sid in sids:
+                pares = [(x, b / "projects" / x.parent.name / x.name)
+                         for x in list((a / "projects").glob(f"*/{sid}.jsonl")) + list((a / "projects").glob(f"*/{sid}"))]
+                pares += [(a / d / sid, b / d / sid) for d in ("file-history", "session-env")]
+                for org, dst in pares:
+                    if not org.exists() or org.is_symlink():
+                        continue
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    if org.is_dir():
+                        shutil.copytree(org, dst, dirs_exist_ok=True, symlinks=True)
+                    else:
+                        shutil.copy2(org, dst)
+                    if sid not in outros:
+                        _remove(org)
+                    movidos += 1
+        c["conta"] = para["id"]
+        gravar_chat(c)
+        print(f"chat {cid} moved to account {para['id']} ({movidos} session files)", flush=True)
+        return c
 
 
 def proxima_fila(cid, atual):
@@ -2792,6 +2850,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 d = self.corpo_json()
                 reenviar(cid, d.get("indice"), d.get("texto"))
                 return self.resp(200, {"ok": True})
+            if acao == "conta":
+                return self.resp(200, mover_conta(cid, self.corpo_json().get("conta")))
             if acao == "bifurcar":
                 return self.resp(200, bifurcar(cid, self.corpo_json().get("indice")))
             if acao == "permitidos":

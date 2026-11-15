@@ -1111,7 +1111,8 @@ function desenharCab(){
  const av=$("#cabAv");av.replaceWith(Object.assign(avatar(c.agente,true),{id:"cabAv"}));
  [...$("#agSeg").children].forEach(b=>b.classList.toggle("on",b.dataset.a===c.agente));
  C.textContent="";
- C.append(chipSel("user","Account"+(trav?" (fixed: the CLI session belongs to this account)":""),EST.contas.filter(x=>x.agente===c.agente).map(x=>[x.id,x.nome]),c.conta,v=>salvarCfg("conta",v),trav));
+ const travConta=trav&&c.agente!=="claude";
+ C.append(chipSel("user",travConta?"Account (fixed: the Antigravity conversation belongs to this account)":trav?"Account (the conversation moves along to the account you pick)":"Account",EST.contas.filter(x=>x.agente===c.agente).map(x=>[x.id,x.nome]),c.conta,v=>mudarConta(v),travConta));
  const ms=(MODELOS[c.agente]||[]).map(m=>[m.id,m.nome||m.id]);if(c.agente==="agy")ms.unshift(["","Default model"]);
  C.append(chipSel("cpu","Model",ms,c.modelo||"",v=>salvarCfg("modelo",v)));
  C.append(chipSel("shield","Permissions",PERMS[c.agente],c.perm||"",v=>salvarCfg("perm",v)));
@@ -1123,6 +1124,12 @@ function desenharCab(){
  pb.innerHTML=ic("folder",14)+esc(curta(c.cwd));pb.disabled=travaPasta;pb.onclick=()=>pasta(c.cwd);C.append(pb);
  $("#dica").textContent=(c.sessao?`Session ${c.sessao.slice(0,8)} · `:"New session · ")+"Enter to send, Shift+Enter for a new line, drop or paste files to attach";
  $("#txt").placeholder=c.agente==="claude"?"Message Claude…":"Ask Antigravity…";
+}
+async function mudarConta(v){
+ if(!CHAT||v===CHAT.conta)return;
+ if(!CHAT.sessao)return salvarCfg("conta",v);
+ if(!confirm(`Continue this conversation on ${contaNome(v)}? Its Claude session moves to that account, and the next message runs there.`)){desenharCab();return}
+ try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/conta`,{conta:v}));desenharCab();desenharMsgs();carregarEstado();toast("Now on "+contaNome(v))}catch(e){toast(cap(e.message));desenharCab()}
 }
 async function salvarCfg(campo,valor){if(!CHAT)return;try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/config`,{[campo]:valor}));desenharCab();carregarEstado()}catch(e){toast(cap(e.message))}}
 $("#titulo").onchange=e=>salvarCfg("titulo",e.target.value.trim()||"New chat");
@@ -1348,6 +1355,30 @@ function pkAlerta(p,id,titulo){
  const q=p.entrada&&p.entrada.questions&&p.entrada.questions[0];
  notifica(tt,{body:p.cmd||(q&&q.question)||String(resumoEntrada(p.entrada)).slice(0,200)||p.ferramenta||"",tag:"pk-"+p.id,requireInteraction:true,data:{id}});
 }
+const LIMRE=/hit your .*limit|usage limit|limit reached|out of (extra )?usage/i;
+function estadoConta(id){
+ const l=EST.limites[id];if(!l)return{p:null,bloq:false};
+ const inf=l.info||{},w=janelas(inf)[0];
+ return{p:w?w.p:null,bloq:inf.status==="rejected"&&(!inf.resetsAt||inf.resetsAt*1000>Date.now())};
+}
+function cartaoLimite(){
+ const k=el("div",{class:"pk lim"}),outras=EST.contas.filter(x=>x.agente==="claude"&&x.id!==CHAT.conta);
+ const t=el("div",{class:"t"});t.innerHTML=ic("clock",15)+esc(contaNome(CHAT.conta)+" reached its usage limit");k.append(t);
+ if(!outras.length){k.append(el("small",{},"Add another Claude account in Accounts to continue this chat there, or wait for the limit to reset."));return k}
+ const f=el("div",{class:"f"});
+ for(const o of outras.sort((a,b)=>estadoConta(a.id).bloq-estadoConta(b.id).bloq)){
+  const e=estadoConta(o.id),b=el("button",{class:"btn"+(e.bloq?"":" pri")});
+  b.innerHTML=ic("user",14)+esc("Continue on "+o.nome+(e.bloq?" (also limited)":e.p!=null?` (${e.p}% used)`:""));
+  b.onclick=()=>continuarEm(o.id,b);f.append(b)}
+ k.append(f,el("small",{},"The whole conversation moves to that account and Claude picks up where it stopped. The Account chip in the header moves it back."));
+ return k;
+}
+async function continuarEm(id,b){
+ if(b)b.disabled=true;
+ try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/conta`,{conta:id}));desenharCab();carregarEstado();
+  $("#txt").value="Continue where you left off.";ajusta();await enviar()}
+ catch(e){toast(cap(e.message));if(b)b.disabled=false}
+}
 function blocoAssist(m,i){
  const b=el("div",{class:"m a"});
  b.append(cabAssist(CHAT.agente,el("span",{},(m.ts?quando(m.ts):"")+(m.importada?" · imported from CLI":""))));
@@ -1357,6 +1388,7 @@ function blocoAssist(m,i){
  if(m.texto){const c=el("div",{class:"corpo",html:md(m.texto)});b.append(c);enriquecer(c)}
  if(m.negadas&&m.negadas.length)b.append(el("div",{class:"erro"},"Permission denied for: "+m.negadas.join(", ")+". Change the permission mode in the header."));
  if(m.erro)b.append(el("div",{class:"erro"},cap(m.erro)));
+ if(m.erro&&i!=null&&i===CHAT.mensagens.length-1&&CHAT.agente==="claude"&&LIMRE.test(m.erro))b.append(cartaoLimite());
  const meta=m.importada?null:metaMsg(m,m.texto);
  if(i!=null&&CHAT.agente==="claude"&&m.uuid&&CHAT.sessao){const bf=el("button",{class:"btn ghost txt",title:"A new chat that continues from this reply, leaving this one as it is"});bf.innerHTML=ic("branch",13)+"Fork";bf.onclick=()=>bifurcarMsg(i);
   if(meta)meta.append(bf);else b.append(el("div",{class:"meta"},bf))}
