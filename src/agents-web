@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# agents-web: start Agents Web, or open it when it is already running.
+# https://github.com/gabrielmf1998/Agents-Web (MIT license)
+set -u
+APP="${AGENTS_WEB_HOME:-$HOME/.local/opt/agents-web}"
+PORT="${AGENTS_WEB_PORT:-47830}"
+INSTALLER="https://raw.githubusercontent.com/gabrielmf1998/Agents-Web/main/install.sh"
+
+usage() {
+    cat <<EOF
+Usage: agents-web [command]
+
+  start      start the service and the tray icon, then open the page (default)
+  open       same as start
+  stop       stop the service and every agent it is running
+  restart    stop, then start again without opening the page
+  status     tell whether it is running
+  log        follow the server log
+  version    print the installed version
+  update     download and install the latest release
+  uninstall  remove the app (chats and settings are kept, see --purge in the README)
+EOF
+}
+
+running() { pgrep -x agents-web-tray >/dev/null; }
+
+stop() {
+    running || return 1
+    pkill -x agents-web-tray
+    for _ in $(seq 1 50); do running || return 0; sleep 0.1; done
+    return 0
+}
+
+case "${1:-start}" in
+    start|open)
+        [ -x "$APP/agents-web-tray" ] || { echo "Agents Web is not installed in $APP" >&2; exit 1; }
+        setsid -f "$APP/agents-web-tray" --open >/dev/null 2>&1
+        echo "Agents Web: http://127.0.0.1:$PORT/" ;;
+    stop|quit)
+        if stop; then echo "Agents Web stopped."; else echo "Agents Web is not running."; fi ;;
+    restart)
+        stop
+        setsid -f "$APP/agents-web-tray" >/dev/null 2>&1
+        echo "Agents Web restarted." ;;
+    status)
+        if running; then echo "running on http://127.0.0.1:$PORT/"; else echo "stopped"; exit 3; fi ;;
+    log)
+        exec tail -n 50 -f "$HOME/.local/share/agents-web/server.log" ;;
+    version|--version|-v)
+        sed -n 's/^VERSAO = "\(.*\)"/\1/p' "$APP/server.py" ;;
+    update)
+        curl -fsSL "$INSTALLER" | bash ;;
+    uninstall)
+        exec bash "$APP/install.sh" --uninstall "${@:2}" ;;
+    -h|--help|help)
+        usage ;;
+    *)
+        usage >&2; exit 2 ;;
+esac

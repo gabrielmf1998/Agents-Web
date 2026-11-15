@@ -1,0 +1,132 @@
+#!/usr/bin/python3 -I
+import json, os, pty, re, select, signal, socket, subprocess, sys
+
+REAL = "/usr/bin/pkexec"
+TOKEN = os.environ.get("AGW_PK", "")
+SOCK = os.environ.get("AGW_PK_SOCK", "")
+ARGS = sys.argv[1:]
+
+
+def normal():
+    os.execv(REAL, [REAL] + ARGS)
+
+
+if not TOKEN or not SOCK or not ARGS or ARGS[0] in ("--version", "--help", "-h"):
+    normal()
+try:
+    conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    conn.connect(SOCK)
+    rf = conn.makefile("r", encoding="utf-8")
+except OSError:
+    normal()
+
+r, w = os.pipe()
+os.set_inheritable(w, True)
+eu = os.getpid()
+agente, fd = pty.fork()
+if agente == 0:
+    os.close(r)
+    os.environ["LC_ALL"] = "C"
+    os.execvp("pkttyagent", ["pkttyagent", "--process", str(eu), "--notify-fd", str(w)])
+os.close(w)
+select.select([r], [], [], 10)
+os.close(r)
+
+filho = subprocess.Popen([REAL] + ARGS)
+parar = []
+
+
+def sinal(n, _):
+    parar.append(n)
+    try:
+        conn.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signal.signal(s, sinal)
+
+
+def manda(d):
+    conn.sendall((json.dumps(d) + "\n").encode())
+
+
+ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+buf, texto, motivo, resultado, pedidos = "", "", "", "", 0
+while filho.poll() is None and not parar:
+    try:
+        pr, _, _ = select.select([fd], [], [], 0.5)
+    except InterruptedError:
+        continue
+    if not pr:
+        continue
+    try:
+        bloco = os.read(fd, 4096).decode(errors="replace")
+    except OSError:
+        break
+    buf = (buf + ansi.sub("", bloco))[-8000:]
+    m = re.search(r"Authentication is needed to ([^\n]+)", buf)
+    if m:
+        texto = m.group(1).strip()
+    if "AUTHENTICATION COMPLETE" in buf:
+        resultado, buf = "ok", ""
+        try:
+            manda({"ok": True})
+        except OSError:
+            pass
+    elif "AUTHENTICATION FAILED" in buf:
+        resultado, buf = "falhou", ""
+        try:
+            manda({"falhou": True})
+        except OSError:
+            pass
+    elif re.search(r"Choose identity to authenticate as[^\n]*:\s*$", buf):
+        nome = os.environ.get("USER", "")
+        m = re.search(r"^\s*(\d+)\.\s.*\(" + re.escape(nome) + r"\)\s*$", buf, re.M) if nome else None
+        if not m:
+            motivo = "several administrator accounts exist and yours was not listed"
+            break
+        os.write(fd, (m.group(1) + "\n").encode())
+        buf = ""
+    elif re.search(r"[Pp]assword[^\n]*:\s*$", buf):
+        buf = ""
+        pedidos += 1
+        try:
+            manda({"token": TOKEN, "cmd": ARGS, "cwd": os.getcwd(), "texto": texto})
+            linha = rf.readline()
+            resp = json.loads(linha) if linha else {}
+        except (OSError, ValueError):
+            resp = {}
+        if resp.get("r") == "senha":
+            os.write(fd, (resp.get("senha", "") + "\n").encode())
+        else:
+            motivo = resp.get("msg") or "the request was cancelled in the web interface"
+            break
+        resp = linha = None
+
+if filho.poll() is None and (motivo or parar):
+    try:
+        filho.terminate()
+    except ProcessLookupError:
+        pass
+try:
+    rc = filho.wait(15)
+except subprocess.TimeoutExpired:
+    filho.kill()
+    rc = filho.wait()
+try:
+    os.kill(agente, signal.SIGTERM)
+    os.waitpid(agente, 0)
+except (ProcessLookupError, ChildProcessError):
+    pass
+if pedidos:
+    try:
+        manda({"fim": "negado" if motivo else (resultado or "erro"), "rc": rc})
+    except OSError:
+        pass
+conn.close()
+if motivo:
+    print(f"pkexec: {motivo}", file=sys.stderr)
+    sys.exit(126)
+sys.exit(rc if rc >= 0 else 128 - rc)
