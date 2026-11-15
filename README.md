@@ -22,6 +22,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 - **Approvals, questions and plans (Claude).** Permission prompts, questions from Claude and plans to approve show up as cards in the chat, with a diff for every edit.
 - **Edit, retry and fork (Claude).** Change a message you sent and get a new reply, or fork any reply into a new chat. The original conversation stays in Claude Code.
 - **Root approvals in the browser.** When an agent runs `pkexec`, a card shows the command and you approve it with your password (https or the PC only) or deny it.
+- **Smart titles.** New chats get a short title written by Claude Haiku from your first message, shown while the reply is still coming in. One click in Settings names your older chats too. Empty chats you leave behind do not pile up in the sidebar.
 - **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, a draft kept per chat, export as Markdown, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
 - **Updates from the page.** Settings checks for a new release when you click and installs it. The page can also be installed as an app.
 - **No dependencies.** The server uses only the Python standard library, the page needs no build step or CDN, and the tray uses under 4 MB of RAM.

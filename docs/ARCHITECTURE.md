@@ -169,6 +169,8 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/reenviar` | POST | edit or retry message `indice` (`texto`, or `null` to resend it as it was) |
 | `chats/<id>/bifurcar` | POST | a new chat that continues from reply `indice` |
 | `chats/<id>/conta` | POST | continue a Claude chat on another Claude account (`conta`), moving its CLI session |
+| `chats/<id>/titulo` | POST | name the chat now with Claude Haiku |
+| `titulos` | GET, POST | start naming the chats still called after their first message, and its progress |
 | `chats/<id>/permitidos` | POST | forget the always allowed tools (`tirar`: one name, or all) |
 | `chats/<id>/apagar`, `chats/apagar` | POST | delete one or several chats, optionally with their files and CLI sessions |
 | `fixar` | POST | pin or unpin a chat |
@@ -191,6 +193,21 @@ Other routes are `/` (the page), `/sw.js` (service worker for notifications), `/
 icons (`/icon.svg`, `/icon-192.png`, `/icon-512.png`), `/ca.crt` (the local CA),
 `/f/<signature>/<path>` (inline files) and `/saude` (health check, loopback only). The event stream may
 take the token as `?t=`, because `EventSource` cannot send headers.
+
+## Chat titles
+
+A new chat is called after its first message, tidied (links become their last path part, the cut falls
+between words). With smart titles on, the server then runs `claude -p --model haiku --no-session-persistence
+--tools "" --strict-mcp-config --disable-slash-commands --setting-sources ""` with a fixed system prompt, in
+the data folder, on the chat's Claude login (or the first Claude login whose limit is not reached, for
+Antigravity chats). That costs about 800 input tokens and takes 2 to 3 seconds. A first message of at least
+15 characters is named right away and the title reaches the page as a `titulo` event of the running reply;
+a shorter one ("hi", a bare file) waits for the reply. The Claude session gets the same name (`custom-title`)
+once the reply is saved, so `claude --resume` lists it too. A title you type yourself always wins.
+
+Chats opened with "New chat" and left without a message are removed when you open another chat (only by the
+tab that created them) and, if left over, by the server after a week. A chat whose settings you changed, a
+pinned chat or one with a draft is never hidden or removed.
 
 ## Tests
 

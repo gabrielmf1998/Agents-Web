@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.5.0"
+VERSAO = "1.6.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 # AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
@@ -362,6 +362,8 @@ def novo_chat(dados):
         "effort": dados.get("effort", ""), "cwd": dados.get("cwd") or CFG["padrao"]["cwd"],
         "sessao": dados.get("sessao", ""), "criado": time.time(), "mensagens": [],
     }
+    if dados.get("ajustado"):
+        chat["ajustado"] = True
     gravar_chat(chat)
     return chat
 
@@ -370,6 +372,7 @@ def resumo_chat(c):
     tot = totais(c)
     return {"id": c["id"], "titulo": c["titulo"], "agente": c["agente"], "conta": c["conta"],
             "modelo": c.get("modelo", ""), "atualizado": c.get("atualizado", 0), "n": len(c["mensagens"]),
+            "ajustado": bool(c.get("ajustado")),
             "tokens": tot["total"], "fila": len(c.get("fila") or []), "sessao": c.get("sessao", ""),
             "cwd": c.get("cwd", ""), "origem": c.get("origem", ""), "antigas": c.get("antigas") or [],
             "rodando": c["id"] in EXECS and not EXECS[c["id"]].acabou}
@@ -1220,9 +1223,19 @@ class Execucao:
                 if self.iniciou:
                     atual.pop("fork", None)  # the branch exists now, under its own session id
                 atual["mensagens"].append(self.msg)
+                renomear = atual.pop("renomear_cli", False)
+                nomear = atual.pop("nomear_depois", False) and not self.msg["erro"] and not self.parado
                 gravar_chat(atual)
             except FileNotFoundError:
+                renomear = nomear = False
+            self.gravado = True
+        if renomear and atual.get("sessao") and not atual.get("fork") and conta_por_id(atual.get("conta", "")):
+            try:
+                renomear_sessao(conta_por_id(atual["conta"]), atual["sessao"], atual["titulo"])
+            except Exception:
                 pass
+        if nomear:
+            threading.Thread(target=nomear_chat, args=(self.chat_id,), daemon=True).start()
         if not self.parado and not self.msg["erro"]:
             try:
                 proxima_fila(self.chat_id, self)
@@ -1239,6 +1252,167 @@ class Execucao:
         t = threading.Timer(180, solta)
         t.daemon = True
         t.start()
+
+
+# ---------------------------------------------------------------- chat titles
+URL_RE = re.compile(r"https?://\S+|www\.\S+")
+TITULO_SP = ("You name chats. Reply with only a short title (2 to 6 words) for the conversation, in the language "
+             "the user wrote in, with normal capitalization, no quotes, no emoji and no final period.")
+
+
+def titulo_simples(texto):
+    """The first message as a tidy title: links become their last path part, spaces collapse, the first letter
+    is a capital and the cut falls between words."""
+    t = str(texto or "")
+    t = URL_RE.sub(lambda m: (re.sub(r"[?#].*", "", m.group(0)).rstrip("/").split("/")[-1] or m.group(0)), t)
+    t = re.sub(r"\s+", " ", t).strip(" ,;").rstrip(" .:-")
+    if not t:
+        return ""
+    if len(t) > 60:
+        t = t[:60].rsplit(" ", 1)[0] if " " in t[:60] else t[:60]
+        t = t.rstrip(" ,.;:-") + "…"
+    primeira = t.split(" ", 1)[0]
+    if primeira[:1].islower() and primeira.islower():   # "iPhone", ".env" and "x86_64" stay as typed
+        t = t[0].upper() + t[1:]
+    return t
+
+
+def _limpa_titulo(t):
+    t = (t or "").strip().splitlines()[0] if (t or "").strip() else ""
+    t = re.sub(r"^(title|título|titulo)\s*:\s*", "", t, flags=re.I)
+    t = re.sub(r"\s+", " ", t.strip().strip("\"'`*#").strip()).rstrip(".")
+    return t[:80]
+
+
+def _contas_titulo(c):
+    # the chat's own Claude login first; Antigravity chats borrow a Claude login. Accounts whose limit
+    # was reached are skipped.
+    agora = time.time()
+    def livre(x):
+        inf = (LIMITES.get(x["id"]) or {}).get("info") or {}
+        return not (inf.get("status") == "rejected" and (inf.get("resetsAt") or agora + 1) > agora)
+    todas = [x for x in CFG["contas"] if x["agente"] == "claude"]
+    primeiro = [x for x in todas if x["id"] == c.get("conta")]
+    return [x for x in primeiro + [x for x in todas if x not in primeiro] if livre(x)]
+
+
+def gerar_titulo(c):
+    """A short title from the first exchange, written by Claude Haiku with no tools, no settings, no MCP and
+    no saved session (about 800 tokens). None when no Claude login can do it."""
+    msgs = c.get("mensagens") or []
+    u = next((m for m in msgs if m.get("papel") == "usuario"), None)
+    if not u:
+        return None
+    texto = (u.get("texto") or "").strip()
+    if not texto and u.get("anexos"):
+        texto = "(sent files: " + ", ".join(a.get("nome", "?") for a in u["anexos"][:5]) + ")"
+    r = next((m for m in msgs if m.get("papel") == "assistente" and m.get("texto")), None)
+    prompt = "Conversation start:\nUser: " + corta(texto, 1500)
+    if r:
+        prompt += "\nAssistant: " + corta(r["texto"], 800)
+    for conta in _contas_titulo(c)[:2]:
+        try:
+            p = subprocess.run([CLAUDE, "-p", "--model", "haiku", "--no-session-persistence", "--tools", "",
+                                "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "",
+                                "--system-prompt", TITULO_SP, "--output-format", "json"],
+                               input=prompt, capture_output=True, text=True, timeout=45, cwd=str(DATA),
+                               env=env_conta(conta))
+            d = json.loads(p.stdout or "{}")
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            continue
+        t = _limpa_titulo(d.get("result")) if not d.get("is_error") else ""
+        if t:
+            return t
+    return None
+
+
+def nomear_chat(cid, condicao=lambda c: c.get("titulo_auto")):
+    """Give the chat a title from Claude Haiku, if `condicao` still holds for the chat when the title arrives
+    (by default: nobody renamed it by hand in the meantime)."""
+    try:
+        t = gerar_titulo(ler_chat(cid))
+    except FileNotFoundError:
+        return None
+    if not t:
+        return None
+    with trava:
+        try:
+            c = ler_chat(cid)
+        except FileNotFoundError:
+            return None
+        if not condicao(c):
+            return None
+        c["titulo"], c["titulo_auto"] = t, False
+        ex = EXECS.get(cid)
+        # finalizar() saves the reply under the same lock and sets ex.gravado there, so either it still
+        # has to run (and will rename the CLI session) or it already ran and the rename happens here
+        espera = bool(ex and not getattr(ex, "gravado", False))
+        if espera:
+            c["renomear_cli"] = True     # the CLI is writing its transcript: name it when the reply ends
+        gravar_chat(c)
+        # an unreplied fork still points at its parent's session, which keeps its own name
+        sid = "" if c.get("fork") else c.get("sessao")
+        conta = conta_por_id(c.get("conta", ""))
+    if ex and not ex.acabou:
+        ex.chat["titulo"] = t
+        ex.emite({"t": "titulo", "titulo": t})
+    if not espera and sid and conta:
+        try:
+            renomear_sessao(conta, sid, t)
+        except Exception:
+            pass
+    return t
+
+
+def titulo_cru(c):
+    # chats named by the old rule: the first message cut at 60 characters, never renamed
+    if c.get("titulo_auto") is False or c.get("origem") == "cli":
+        return False
+    u = next((m for m in c.get("mensagens") or [] if m.get("papel") == "usuario"), None)
+    return bool(u) and c.get("titulo") == re.sub(r"\s+", " ", (u.get("texto") or "").strip())[:60]
+
+
+NOMEANDO = {"rodando": False, "feitos": 0, "tentados": 0, "total": 0}
+
+
+def _sem_nome(c):
+    return bool(c.get("titulo_auto") or titulo_cru(c))
+
+
+def nomear_antigos():
+    try:
+        alvos = []
+        for q in sorted(CHATS.glob("*.json"), key=lambda q: -q.stat().st_mtime):
+            try:
+                c = json.loads(q.read_text())
+            except Exception:
+                continue
+            if c.get("mensagens") and _sem_nome(c):
+                alvos.append(c["id"])
+        alvos = alvos[:100]
+        NOMEANDO.update(feitos=0, tentados=0, total=len(alvos))
+        for cid in alvos:
+            if nomear_chat(cid, condicao=_sem_nome):
+                NOMEANDO["feitos"] += 1
+            NOMEANDO["tentados"] += 1
+    finally:
+        NOMEANDO["rodando"] = False
+
+
+def limpar_vazios(idade=7 * 86400):
+    """Chats opened with "New chat" and left without a message, without changing any setting, are removed
+    after a week."""
+    fixos = set(CFG.get("fixados") or [])
+    for q in CHATS.glob("*.json"):
+        try:
+            c = json.loads(q.read_text())
+            quando = max(c.get("atualizado") or 0, c.get("criado") or 0)
+            if (not c.get("mensagens") and not c.get("sessao") and not c.get("fila") and not c.get("ajustado")
+                    and c["id"] not in fixos and c["id"] not in EXECS and quando
+                    and time.time() - quando > idade):
+                q.unlink()
+        except Exception:
+            pass
 
 
 def enviar(cid, texto, anexos_ids, substitui=None):
@@ -1260,12 +1434,20 @@ def enviar(cid, texto, anexos_ids, substitui=None):
                 anexos.append(a)
         msg = {"papel": "usuario", "texto": texto, "anexos": anexos, "ts": time.time()}
         chat["mensagens"].append(msg)
-        if chat["titulo"] in ("New chat", "Novo chat") and texto.strip():
-            chat["titulo"] = re.sub(r"\s+", " ", texto.strip())[:60]
+        nomear = False
+        if chat["titulo"] in ("New chat", "Novo chat") and (texto.strip() or anexos):
+            chat["titulo"] = titulo_simples(texto) or (anexos[0].get("nome") or "New chat")[:60]
+            chat["titulo_auto"] = True
+            if CFG["padrao"].get("titulos", True):
+                # "hi" or a bare attachment says little: wait for the reply to know the topic
+                nomear = len(texto.strip()) >= 15
+                chat["nomear_depois"] = not nomear
         gravar_chat(chat)
         ex = Execucao(chat, texto, anexos)
         EXECS[cid] = ex
     threading.Thread(target=ex.rodar, daemon=True).start()
+    if nomear:
+        threading.Thread(target=nomear_chat, args=(cid,), daemon=True).start()
     return ex
 
 
@@ -2731,10 +2913,20 @@ class H(http.server.BaseHTTPRequestHandler):
         if partes == ["atualizar"] and metodo == "POST":
             atualizar()
             return self.resp(200, {"ok": True})
+        if partes == ["titulos"] and metodo == "POST":
+            with trava:
+                novo = not NOMEANDO["rodando"]
+                if novo:
+                    NOMEANDO.update(rodando=True, feitos=0, tentados=0, total=0)
+            if novo:
+                threading.Thread(target=nomear_antigos, daemon=True).start()
+            return self.resp(200, NOMEANDO)
+        if partes == ["titulos"]:
+            return self.resp(200, NOMEANDO)
         if partes == ["preferencias"] and metodo == "POST":
             d = self.corpo_json()
             with trava:
-                for k in ("dica", "root"):
+                for k in ("dica", "root", "titulos"):
                     if k in d:
                         CFG["padrao"][k] = bool(d[k])
                 salvar_json(CFG_FILE, CFG)
@@ -2820,7 +3012,13 @@ class H(http.server.BaseHTTPRequestHandler):
                     for k in ("titulo", "modelo", "perm", "effort"):
                         if k in d:
                             c[k] = str(d[k])[:200]
-                    if "titulo" in d and c.get("sessao") and conta_por_id(c["conta"]):
+                    if "titulo" in d:
+                        c["titulo_auto"] = False
+                        c.pop("renomear_cli", None)
+                        c.pop("nomear_depois", None)
+                    if any(k in d for k in ("titulo", "modelo", "perm", "effort", "cwd")):
+                        c["ajustado"] = True
+                    if "titulo" in d and c.get("sessao") and not c.get("fork") and conta_por_id(c["conta"]):
                         try:
                             renomear_sessao(conta_por_id(c["conta"]), c["sessao"], c["titulo"])
                         except ValueError:
@@ -2844,12 +3042,22 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self.resp(200, {"ok": True, **r})
             if acao == "duplicar":
                 c = ler_chat(cid)
-                n = novo_chat({k: c[k] for k in ("agente", "conta", "modelo", "perm", "effort", "cwd")})
+                n = novo_chat({**{k: c[k] for k in ("agente", "conta", "modelo", "perm", "effort", "cwd")},
+                               "ajustado": True})
                 return self.resp(200, n)
             if acao == "reenviar":
                 d = self.corpo_json()
                 reenviar(cid, d.get("indice"), d.get("texto"))
                 return self.resp(200, {"ok": True})
+            if acao == "titulo":
+                c = ler_chat(cid)
+                if not c.get("mensagens"):
+                    raise ValueError("send a message first")
+                if not _contas_titulo(c):
+                    raise ValueError("no Claude account can make a title now (all of them reached their limit)")
+                if not nomear_chat(cid, condicao=lambda c: True):
+                    raise ValueError("Claude could not make a title right now. Try again in a moment")
+                return self.resp(200, ler_chat(cid))
             if acao == "conta":
                 return self.resp(200, mover_conta(cid, self.corpo_json().get("conta")))
             if acao == "bifurcar":
@@ -3015,6 +3223,7 @@ if __name__ == "__main__":
     if shutil.which("pkttyagent") and (PK_BIN / "pkexec").exists():
         threading.Thread(target=pk_servidor, daemon=True).start()
     threading.Thread(target=lambda: lista_cli(), daemon=True).start()
+    threading.Thread(target=limpar_vazios, daemon=True).start()
     srv = Servidor(("0.0.0.0", PORTA), H)
     print(f"Agents Web {VERSAO} on http://127.0.0.1:{PORTA}", flush=True)
     srv.serve_forever()

@@ -36,6 +36,14 @@ FAKE_CLAUDE = textwrap.dedent(f"""\
     def log(nome, d):
         with open(H + "/" + nome, "a") as f:
             f.write(json.dumps(d) + "\\n")
+    if "--no-session-persistence" in args:   # the short call that names a chat
+        entrada = sys.stdin.read()
+        log("claude-titulo.jsonl", {{"args": args, "stdin": entrada, "conta": os.environ.get("CLAUDE_CONFIG_DIR", "")}})
+        if "no title" in entrada:
+            print(json.dumps({{"is_error": True, "result": "error"}}))
+        else:
+            print(json.dumps({{"type": "result", "is_error": False, "result": '"Fake title."'}}))
+        sys.exit(0)
     log("claude-args.jsonl", args)
     if args[:2] == ["auth", "status"]:
         print(json.dumps({{"loggedIn": True, "email": "test@example.invalid", "subscriptionType": "pro"}}))
@@ -137,11 +145,13 @@ def porta_livre():
 class Servidor:
     """The real server, started in a temporary HOME."""
 
-    def __init__(self):
+    def __init__(self, preparar=None):
         self.tmp = Path(tempfile.mkdtemp(prefix="agents-web-test-"))
         self.home = self.tmp / "home"
         binarios = self.home / ".local/bin"
         binarios.mkdir(parents=True)
+        if preparar:
+            preparar(self.home)
         fake = binarios / "claude"
         fake.write_text(FAKE_CLAUDE)
         fake.chmod(0o755)
@@ -257,6 +267,32 @@ class Servidor:
 
 
 @unittest.skipUnless(shutil.which("setpriv"), "needs setpriv (util-linux)")
+class TestLimpeza(unittest.TestCase):
+    def test_chats_vazios_antigos_somem(self):
+        velho = time.time() - 8 * 86400
+        casos = {"vazio_velho": {"atualizado": velho}, "vazio_novo": {"atualizado": time.time() - 3600},
+                 "ajustado": {"atualizado": velho, "ajustado": True}, "sem_data": {},
+                 "com_msg": {"atualizado": velho, "mensagens": [{"papel": "usuario", "texto": "x"}]},
+                 "com_fila": {"atualizado": velho, "fila": [{"texto": "x"}]}}
+        def preparar(home):
+            d = home / ".local/share/agents-web/chats"
+            d.mkdir(parents=True)
+            for nome, extra in casos.items():
+                c = {"id": nome, "titulo": "New chat", "agente": "claude", "conta": "claude1", "cwd": str(home),
+                     "sessao": "", "mensagens": [], **extra}
+                (d / f"{nome}.json").write_text(json.dumps(c))
+        s = Servidor(preparar)
+        try:
+            fim = time.time() + 5
+            d = s.home / ".local/share/agents-web/chats"
+            while (d / "vazio_velho.json").exists() and time.time() < fim:
+                time.sleep(0.1)
+            self.assertEqual(sorted(p.stem for p in d.glob("*.json")),
+                             sorted(set(casos) - {"vazio_velho"}))
+        finally:
+            s.parar()
+
+
 class TestServidor(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -321,7 +357,7 @@ class TestServidor(unittest.TestCase):
         self.assertEqual(tipos[-1], "fim")
         chat = self.s.espera_parado(c["id"])
         self.assertEqual(chat["sessao"], SID)
-        self.assertEqual(chat["titulo"], "hello there")
+        self.assertIn(chat["titulo"], ("Hello there", "Fake title"))  # the smart title may already be in
         resp = chat["mensagens"][-1]
         self.assertEqual(resp["papel"], "assistente")
         self.assertEqual(resp["texto"], "echo: hello there")
@@ -523,6 +559,94 @@ class TestServidor(unittest.TestCase):
         self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 0}, esperado=400)
 
     # ---------------------------------------------------------------- app
+    def espera_titulo(self, cid, esperado, limite=10):
+        fim = time.time() + limite
+        while time.time() < fim:
+            t = self.s.api(f"/api/chats/{cid}")["titulo"]
+            if t == esperado:
+                return t
+            time.sleep(0.1)
+        self.fail(f"title stayed {t!r}, expected {esperado!r}")
+
+    def test_titulos(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hello https://example.com/docs/page?x=1 world"})
+        self.s.espera_parado(c["id"])
+        self.espera_titulo(c["id"], "Fake title")
+        chamada = json.loads((self.s.home / "claude-titulo.jsonl").read_text().splitlines()[-1])
+        a = chamada["args"]
+        self.assertEqual(a[a.index("--model") + 1], "haiku")
+        self.assertEqual(a[a.index("--tools") + 1], "")
+        self.assertIn("--strict-mcp-config", a)
+        self.assertIn("User: hello https://example.com/docs/page?x=1 world", chamada["stdin"])
+        # the main runs never see the title call
+        self.assertNotIn("--no-session-persistence", self.s.args_claude()[-1])
+        # without smart titles: the first message, tidied
+        self.s.api("/api/preferencias", {"titulos": False})
+        try:
+            c2 = self.novo_chat()
+            self.s.api(f"/api/chats/{c2['id']}/enviar", {"texto": "  check https://github.com/a/Agents-Web/  now please "})
+            self.assertEqual(self.s.api(f"/api/chats/{c2['id']}")["titulo"], "Check Agents-Web now please")
+            longo = "word " * 30
+            c3 = self.novo_chat()
+            self.s.api(f"/api/chats/{c3['id']}/enviar", {"texto": longo})
+            t = self.s.api(f"/api/chats/{c3['id']}")["titulo"]
+            self.assertTrue(t.startswith("Word word") and t.endswith("word…") and len(t) <= 61, t)
+            self.s.espera_parado(c2["id"]); self.s.espera_parado(c3["id"])
+        finally:
+            self.s.api("/api/preferencias", {"titulos": True})
+        self.s.api("/api/preferencias", {"titulos": False})
+        try:
+            for texto, esperado in ((".env is not loaded", ".env is not loaded"), ("iPhone build fails", "iPhone build fails"),
+                                    ("--force flag broke.", "--force flag broke")):
+                cx = self.novo_chat()
+                self.s.api(f"/api/chats/{cx['id']}/enviar", {"texto": texto})
+                self.assertEqual(self.s.api(f"/api/chats/{cx['id']}")["titulo"], esperado)
+                self.s.espera_parado(cx["id"])
+        finally:
+            self.s.api("/api/preferencias", {"titulos": True})
+        # a short first message ("hi") is named once the reply is in
+        curto = self.novo_chat()
+        n0 = len((self.s.home / "claude-titulo.jsonl").read_text().splitlines())
+        self.s.api(f"/api/chats/{curto['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(curto["id"])
+        self.espera_titulo(curto["id"], "Fake title")
+        chamada = json.loads((self.s.home / "claude-titulo.jsonl").read_text().splitlines()[n0])
+        self.assertIn("Assistant: echo: hi", chamada["stdin"])
+        # a chat without messages cannot be named; settings mark a chat as chosen, so it is kept
+        vazio = self.novo_chat()
+        st, _, _ = self.s.pedir("POST", f"/api/chats/{vazio['id']}/titulo", {}, {"X-Token": self.s.token})
+        self.assertEqual(st, 400)
+        self.assertFalse(next(x for x in self.s.api("/api/estado")["chats"] if x["id"] == vazio["id"])["ajustado"])
+        self.s.api(f"/api/chats/{vazio['id']}/config", {"effort": "low"})
+        self.assertTrue(next(x for x in self.s.api("/api/estado")["chats"] if x["id"] == vazio["id"])["ajustado"])
+        # a failed title call keeps the tidy title; "Name it with AI" retries on demand
+        c4 = self.novo_chat()
+        self.s.api(f"/api/chats/{c4['id']}/enviar", {"texto": "no title here"})
+        self.s.espera_parado(c4["id"])
+        time.sleep(0.5)
+        self.assertEqual(self.s.api(f"/api/chats/{c4['id']}")["titulo"], "No title here")
+        st, _, _ = self.s.pedir("POST", f"/api/chats/{c4['id']}/titulo", {}, {"X-Token": self.s.token})
+        self.assertEqual(st, 400)
+        self.assertEqual(self.s.api(f"/api/chats/{c2['id']}/titulo", {})["titulo"], "Fake title")
+        # renaming by hand wins over a title that arrives later
+        r = self.s.api(f"/api/chats/{c3['id']}/config", {"titulo": "Mine"})
+        self.assertFalse(r["titulo_auto"])
+        # old chats named after their first message get a title in the background
+        arq = self.s.home / ".local/share/agents-web/chats" / f"{c4['id']}.json"
+        d = json.loads(arq.read_text())
+        d.pop("titulo_auto", None)
+        d["mensagens"][0]["texto"] = "an old question"
+        d["mensagens"][1]["texto"] = "an old answer"
+        d["titulo"] = "an old question"
+        arq.write_text(json.dumps(d))
+        self.s.api("/api/titulos", {})
+        fim = time.time() + 10
+        while self.s.api("/api/titulos")["rodando"] and time.time() < fim:
+            time.sleep(0.1)
+        self.assertEqual(self.s.api(f"/api/chats/{c4['id']}")["titulo"], "Fake title")
+        self.assertEqual(self.s.api(f"/api/chats/{c3['id']}")["titulo"], "Mine")
+
     def test_mover_para_outra_conta(self):
         segunda = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Second Test"})
         c = self.novo_chat()

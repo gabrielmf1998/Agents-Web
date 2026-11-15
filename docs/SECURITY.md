@@ -79,6 +79,10 @@ always does. Details:
 - Agents Web itself connects only to `api.anthropic.com/api/oauth/usage` (Claude usage limits, with the
   account's own OAuth token) and, when you click "Check for updates", to the GitHub or GitLab releases API.
   The CLIs make their own connections as usual. There is no telemetry and no automatic update check.
+- **Smart titles** (on by default, Settings) run `claude -p --model haiku` once per new chat with the first
+  message (up to 1500 characters) and, for short messages, the start of the reply. It runs without tools,
+  settings, MCP servers or a saved session, on the chat's own Claude login. For Antigravity chats it uses
+  one of your Claude logins, so that first message also goes to Anthropic. Turn it off to keep titles local.
   "Update now" and `agents-web update` download the installer from the same repository, over https, only
   when you ask.
 

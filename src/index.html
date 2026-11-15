@@ -847,7 +847,7 @@ async function carregarCli(forcar){if(!forcar&&Date.now()-cliT<25000)return;cliT
 const visiveis=()=>{const q=$("#busca").value.trim();
  const base=BUSCA&&BUSCA.q===q?BUSCA.r.map(x=>{const c=EST.chats.find(y=>y.id===x.id);return c&&{...c,busca:x.busca}}).filter(Boolean):EST.chats.filter(c=>!q||nrm(c.titulo).includes(nrm(q)));
  const cl=CLI.map(x=>({...x,id:"cli:"+x.sid,cli:true,atualizado:x.quando})).filter(c=>!q||nrm(c.titulo).includes(nrm(q))||nrm(curta(c.cwd)).includes(nrm(q)));
- return[...base,...cl].filter(c=>!FILTRO||c.agente===FILTRO).sort((a,b)=>b.atualizado-a.atualizado)};
+ return[...base,...cl].filter(c=>(!FILTRO||c.agente===FILTRO)&&(c.cli||c.n||c.fila||c.rodando||c.ajustado||(CHAT&&CHAT.id===c.id)||(EST.fixados||[]).includes(c.id)||LS.get(RASC+c.id,""))).sort((a,b)=>b.atualizado-a.atualizado)};
 function destacar(i,q){
  if(i==null||i<0||!q)return;const b=$(`#col .m[data-i="${i}"]`);if(!b)return;
  const nq=nrm1(q.replace(/\s+/g," ")),raiz=b.querySelector(".corpo")||b,w=document.createTreeWalker(raiz,NodeFilter.SHOW_TEXT),nos=[];let primeiro=null;
@@ -869,7 +869,7 @@ function desenharLista(){
   const it=el("div",{class:"item"+(CHAT&&CHAT.id===c.id&&!SEL?" on":"")+(marcado?" marcado":""),onclick:()=>{if(SEL){SEL.has(c.id)?SEL.delete(c.id):SEL.add(c.id);desenharLista()}else if(c.cli)abrirCli(c);else abrir(c.id).then(()=>c.busca&&destacar(c.busca.msg,$("#busca").value.trim()))}});
   if(SEL){const k=el("span",{class:"chk"});k.innerHTML=ic("check",13);it.append(k)}else it.append(avatar(c.agente));
   it.append(el("span",{class:"tt",html:(c.cli?`<span class="term" title="Terminal conversation">${ic("terminal",13)}</span>`:"")+((EST.pedidos||[]).some(p=>p.chat===c.id)?'<span class="pk-dot" title="Waiting for you"></span>':c.rodando?'<span class="vivo-dot" title="Running"></span>':NOVOS.has(c.id)?'<span class="novo-dot" title="New reply"></span>':"")+esc(c.titulo)}),
-   el("span",{class:"sub",title:c.cwd||""},c.cli?`${contaNome(c.conta)} · ${curta(c.cwd)||"?"} · ${plural(c.n,"prompt")}${c.ativo?" · open in a terminal":""}`:`${contaNome(c.conta)} · ${curta(c.cwd)} · ${plural(c.n,"message")}${c.fila?` · ${c.fila} queued`:""}`));
+   el("span",{class:"sub",title:c.cwd||""},c.cli?`${contaNome(c.conta)} · ${curta(c.cwd)||"?"} · ${plural(c.n,"prompt")}${c.ativo?" · open in a terminal":""}`:[contaNome(c.conta),curta(c.cwd)!=="~"?curta(c.cwd):null,plural(c.n,"message"),c.fila?`${c.fila} queued`:null].filter(Boolean).join(" · ")));
   if(c.busca&&c.busca.msg>=0)it.append(el("span",{class:"trecho",html:esc(c.busca.antes)+"<mark>"+esc(c.busca.achado)+"</mark>"+esc(c.busca.depois)}));
   const d=el("button",{class:"btn ghost ic del",title:"Pin, rename, folder, delete",onclick:e=>{e.stopPropagation();menuItem(c,d)}});d.innerHTML=ic("mais",16);it.append(d);
   L.append(it);
@@ -905,6 +905,7 @@ function menuItem(c,btn){
  const fx=(EST.fixados||[]).includes(c.id);
  op("pin",fx?"Unpin":"Pin to top",()=>fixarItem(c,!fx));
  op("pencil","Rename",()=>renomearItem(c));
+ if(!c.cli&&c.n)op("sparkles","Name it with AI",()=>tituloIA(c));
  if(c.agente==="claude"||(!c.cli&&!c.sessao))op("folder","Change folder",()=>mudarPastaItem(c));
  if(!c.cli)op("download","Export as Markdown",()=>exportarItem(c));
  op("trash","Delete",()=>confirmarApagar([c.id]),"perigo");
@@ -916,6 +917,10 @@ function menuItem(c,btn){
 async function abrirCli(x,depois){
  toast("Opening the terminal conversation…");
  try{const c=await api("/api/cli/importar",{conta:x.conta,id:x.sid});CLI=CLI.filter(y=>y.sid!==x.sid);await carregarEstado();await abrir(c.id);if(depois)depois()}catch(e){toast(cap(e.message))}
+}
+async function tituloIA(c){
+ toast("Making a title…");
+ try{const r=await api(`/api/chats/${c.id}/titulo`,{});if(CHAT&&CHAT.id===c.id){CHAT.titulo=r.titulo;desenharCab()}await carregarEstado();toast("Renamed to "+r.titulo)}catch(e){toast(cap(e.message))}
 }
 function renomearItem(c){
  abreDlg("Rename","estreito");const B=$("#dlgB");
@@ -1077,8 +1082,12 @@ function grafico(T,top,cor){
 const RASC="rasc.";
 const guardaRascunho=()=>{if(CHAT)LS.set(RASC+CHAT.id,$("#txt").value)};
 function podaRascunhos(){try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith(RASC)&&(!localStorage.getItem(k)||!EST.chats.some(c=>c.id===k.slice(RASC.length))))localStorage.removeItem(k)}}catch{}}
+const CRIADOS=new Set();
+function vazioDescartavel(c){return c&&CRIADOS.has(c.id)&&!c.ajustado&&!c.mensagens.length&&!c.sessao&&!(c.fila||[]).length&&!c.rodando&&!$("#txt").value.trim()&&!PEND.length&&!(EST.fixados||[]).includes(c.id)}
+async function descartaVazio(c){CRIADOS.delete(c.id);try{const r=await api(`/api/chats/${c.id}`);if(r.mensagens.length||r.ajustado||(r.fila||[]).length||r.rodando)return;await api(`/api/chats/${c.id}/apagar`,{});EST.chats=EST.chats.filter(x=>x.id!==c.id);desenharLista()}catch{}}
 async function abrir(id,manterLado,origem){
  const antes=CHAT&&CHAT.id;
+ if(antes&&antes!==id&&vazioDescartavel(CHAT))descartaVazio(CHAT);
  let novo;try{novo=await api("/api/chats/"+id)}catch(e){toast(cap(e.message));return}
  if(ES){ES.close();ES=null}pararSpin();VIVO=null;
  if(antes!==id&&(antes||!$("#txt").value)){if(antes)guardaRascunho();$("#txt").value=LS.get(RASC+id,"");ajusta()}
@@ -1460,6 +1469,7 @@ function escutar(desde){
    case"ctx":VIVO.ctx=ev.usado;desenharBarra(ev.usado);break;
    case"sistema":if(ev.modelo){modelo.textContent=nomeModelo(ev.modelo);modelo.hidden=false}break;
    case"sub":VIVO.status="Subagent: "+ev.s;break;
+   case"titulo":if(CHAT&&CHAT.id===id){CHAT.titulo=ev.titulo;if(document.activeElement!==$("#titulo"))$("#titulo").value=ev.titulo}{const x=EST.chats.find(y=>y.id===id);if(x){x.titulo=ev.titulo;desenharLista()}}break;
    case"limite":EST.limites[ev.conta]={info:ev.info,quando:ev.quando};desenharUso();break;
    case"erro":b.append(el("div",{class:"erro"},cap(ev.s)));break;
    case"pedido":{comecou();const novo=cartaoPk(ev),v=pks.querySelector(`[data-pk="${CSS.escape(ev.id)}"]`);if(v)v.replaceWith(novo);else pks.append(novo);
@@ -1528,8 +1538,9 @@ document.addEventListener("drop",e=>{if(e.dataTransfer?.files?.length){e.prevent
 /* ---------- new / duplicate / delete ---------- */
 async function novoChat(agente,conta,origem){
  agente=agente||(CHAT?CHAT.agente:TEMA||"claude");
+ if(vazioDescartavel(CHAT)&&CHAT.agente===agente&&(!conta||CHAT.conta===conta)){$("#lado").classList.remove("aberto");$("#txt").focus();return CHAT}
  const c=await api("/api/chats",{agente,conta:conta||(CHAT&&CHAT.agente===agente?CHAT.conta:undefined)});
- await carregarEstado();await abrir(c.id,false,origem);$("#txt").focus();return c;
+ CRIADOS.add(c.id);await carregarEstado();await abrir(c.id,false,origem);$("#txt").focus();return c;
 }
 $("#novoBtn").onclick=()=>{
  abreDlg("New chat","estreito");const B=$("#dlgB");
@@ -1637,6 +1648,10 @@ function ajustes(){
  const vs=el("select",{class:"campo"});for(const[v,n]of[["","Browser language"],["pt-BR","Português (Brasil)"],["en-US","English (US)"],["es-ES","Español"]])vs.append(el("option",{value:v},n));
  vs.value=LS.get("vozlang","");vs.onchange=()=>LS.set("vozlang",vs.value);
  linha("Dictation language",SR?"Used by the microphone button":"This browser has no speech recognition, use Chrome",vs);
+ linha("Smart titles","Name new chats with a short title written by Claude Haiku (about 800 tokens of the chat's Claude account, or of another Claude account for Antigravity chats)",tog(EST.padrao.titulos!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{titulos:v});toast(v?"New chats get a title":"Titles off")}catch(e){toast(cap(e.message))}}));
+ {const b=el("button",{class:"btn sm"});b.innerHTML=ic("sparkles",14)+"Name old chats";
+  b.onclick=async()=>{b.disabled=true;try{let r=await api("/api/titulos",{});const iv=setInterval(async()=>{try{r=await api("/api/titulos");b.textContent=r.total?`Naming… ${r.tentados}/${r.total}`:"Naming…";if(!r.rodando){clearInterval(iv);b.textContent=r.total?`Named ${r.feitos} of ${r.total}`:"Nothing to name";carregarEstado()}}catch{clearInterval(iv)}},1500)}catch(e){toast(cap(e.message));b.disabled=false}};
+  linha("Old chat titles","Gives a short title to the chats still named after their first message",b)}
  linha("Rich replies","Tell agents they can answer with live HTML previews and show PC files inline (about 250 tokens, cached)",tog(EST.padrao.dica!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{dica:v});toast(v?"Agents will know":"Hint off")}catch(e){toast(cap(e.message))}}));
  if(EST.root)linha("Root password here","When an agent runs pkexec, ask for your password in this page (https only) instead of the window on the PC screen",tog(EST.padrao.root!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{root:v});toast(v?"Root requests come here":"Root requests go to the PC screen")}catch(e){toast(cap(e.message))}}));
  sec("Updates");

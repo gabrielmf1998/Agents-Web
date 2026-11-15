@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.0 (2026-11-15)
+
+New
+
+- **Smart titles.** A new chat gets a short title written by Claude Haiku, like "Ryzen 9950X3D compatibility"
+  instead of the first 60 characters of your message. It appears about 2 seconds after you send, while the
+  reply is still coming in. Very short first messages ("hi", only a file) are named after the reply. The
+  Claude Code session gets the same name, so `claude --resume` shows it too. Costs about 800 tokens per chat
+  and can be turned off in Settings.
+- **Name old chats.** Settings, Old chat titles, gives a title to every chat still named after its first
+  message (up to 100 at a time, with progress). Titles you typed yourself are never touched.
+- **Name it with AI** in the chat menu, for any single chat.
+- Without smart titles the first message still becomes a tidier title: links turn into their last path part,
+  the first letter is a capital, and the cut falls between words with an ellipsis.
+
+Changes
+
+- Empty "New chat" entries no longer pile up. A chat you open and leave without a message is removed, "New
+  chat" reuses the empty chat you are in, and leftovers from other devices are removed after a week. Chats
+  with changed settings, pinned chats and chats with a draft are always kept.
+- The sidebar no longer shows `~` for chats in your home folder.
+
 ## 1.5.0 (2026-11-15)
 
 New
