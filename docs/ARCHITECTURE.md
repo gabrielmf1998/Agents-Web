@@ -132,7 +132,7 @@ hidden folder gets a link for that one file only.
 
 | Path | Content |
 |---|---|
-| `~/.config/agents-web/config.json` | accounts, defaults, PC token, paired devices, pinned chats (mode 600) |
+| `~/.config/agents-web/config.json` | accounts, defaults, PC token, paired devices, pinned chats, saved prompts (mode 600) |
 | `~/.config/agents-web/contas/<id>/` | `CLAUDE_CONFIG_DIR` of each extra Claude account |
 | `~/.config/agents-web/tls/` | the local CA and the server certificate (folder 700, keys 600) |
 | `~/.local/share/agents-web/chats/<id>.json` | one file per web chat (messages, tool calls, settings) |
@@ -157,7 +157,7 @@ that way. They are stable identifiers, not text shown to users.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `estado` | GET | accounts, chats, limits, defaults, network info, pending root requests, pinned chats |
+| `estado` | GET | accounts, chats, limits, defaults, network info, pending root requests, pinned chats, saved prompts |
 | `chats` | POST | create a chat |
 | `chats/<id>` | GET | a chat with all its messages |
 | `chats/<id>/enviar` | POST | send a message (queued when a reply is running) |
@@ -184,6 +184,7 @@ that way. They are stable identifiers, not text shown to users.
 | `contas/status`, `contas/login`, `contas/nova`, `contas/editar` | GET, POST | accounts |
 | `cli/sessoes`, `cli/lista`, `cli/renomear`, `cli/apagar`, `cli/importar` | GET, POST | terminal sessions |
 | `preferencias` | POST | default settings |
+| `prompts` | POST | replace the saved prompts (`prompts`: a list of `{id, nome, texto}`, up to 200) |
 | `pedido` | POST | answer a card: a root request (password or deny), a tool (`aprovar`, `sempre`, `negar` with `motivo`), a question (`responder` with `respostas`) or a plan (`aprovar` with `modo`, or `negar`) |
 | `atualizacao?forcar=1`, `atualizar` | GET, POST | check the latest release, install it |
 | `celular/pin`, `celular/passe`, `celular/dispositivos`, `celular/revogar` | GET, POST | phone pairing |

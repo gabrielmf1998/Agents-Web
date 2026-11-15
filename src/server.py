@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.6.0"
+VERSAO = "1.7.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 # AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
@@ -484,7 +484,7 @@ DICA = ("You are replying in the user's own web chat interface for this PC, not 
         "numbers, rankings, timelines, progress, flows or architectures), add a visual: one self-contained ```html code "
         "block, which the interface renders as a live preview in a sandboxed frame (scripts and CDN libraries work; no "
         "localStorage, cookies or access to this PC). Skip it for short or purely conversational replies, and keep the "
-        "text answer complete on its own. The frame already carries the interface's dark theme and font: leave the page "
+        "text answer complete on its own. The frame already carries the interface's theme (dark or light) and font: leave the page "
         "background transparent and style with the CSS variables --ag-text, --ag-muted, --ag-surface, --ag-surface-2, "
         "--ag-border, --ag-accent, --ag-ok, --ag-warn, --ag-err, --ag-radius and --ag-c1 to --ag-c4 (chart series), so it "
         "blends in. To show a file from this PC inline (image, video, audio, PDF or an .html page), write its absolute "
@@ -2314,6 +2314,34 @@ def fixar(chave, fixo):
         return list(CFG["fixados"])
 
 
+def salvar_prompts(lista):
+    """Saved prompts, shared by every device. The page sends the whole list each time."""
+    if not isinstance(lista, list) or len(lista) > 200:
+        raise ValueError("invalid prompt list (200 prompts at most)")
+    out, ids, total = [], set(), 0
+    for p in lista:
+        if not isinstance(p, dict):
+            raise ValueError("invalid prompt")
+        texto = str(p.get("texto") or "")
+        if not texto.strip():
+            continue
+        if len(texto) > 20000:
+            raise ValueError("a prompt is too long (20000 characters at most)")
+        total += len(texto)
+        if total > 400000:
+            raise ValueError("saved prompts are too long altogether")
+        nome = " ".join(str(p.get("nome") or "").split())[:80] or " ".join(texto.split())[:60]
+        pid = str(p.get("id") or "")
+        if not re.fullmatch(r"[a-f0-9]{8}", pid) or pid in ids:
+            pid = secrets.token_hex(4)
+        ids.add(pid)
+        out.append({"id": pid, "nome": nome, "texto": texto})
+    with trava:
+        CFG["prompts"] = out
+        salvar_json(CFG_FILE, CFG)
+    return out
+
+
 def troca_fixado(velho, novo):
     with trava:
         f = CFG.get("fixados") or []
@@ -2863,6 +2891,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                    "padrao": CFG["padrao"], "local": self.local, "ips": info_rede()["ips"], "porta": PORTA,
                                    "home": str(HOME), "tls": bool(TLS["ctx"]), "seguro": self.tls,
                                    "pedidos": pk_pendentes(), "root": PK["ok"], "fixados": CFG.get("fixados") or [],
+                                   "prompts": CFG.get("prompts") or [],
                                    "https": f"https://{(self.headers.get('Host') or '').rsplit(':', 1)[0]}:{PORTA}/"})
         if partes == ["busca"]:
             return self.resp(200, buscar(self.q.get("q", [""])[0]))
@@ -2905,6 +2934,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 if i:
                     out[c] = i
             return self.resp(200, out)
+        if partes == ["prompts"] and metodo == "POST":
+            return self.resp(200, {"prompts": salvar_prompts(self.corpo_json().get("prompts"))})
         if partes == ["fixar"] and metodo == "POST":
             d = self.corpo_json()
             return self.resp(200, {"fixados": fixar(d.get("id"), bool(d.get("fixo")))})

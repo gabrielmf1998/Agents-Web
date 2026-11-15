@@ -747,6 +747,26 @@ class TestServidor(unittest.TestCase):
         st, b, cab = self.s.pedir("GET", url, cab={"Range": "bytes=1-3"})
         self.assertEqual((st, b), (206, b"PNG"))
 
+    def test_prompts_salvos(self):
+        r = self.s.api("/api/prompts", {"prompts": [
+            {"nome": "  Code   review ", "texto": "Review the code in this folder"},
+            {"nome": "", "texto": "Summarize\nthe log"},
+            {"nome": "blank", "texto": "   "},
+        ]})["prompts"]
+        self.assertEqual([p["nome"] for p in r], ["Code review", "Summarize the log"])
+        self.assertTrue(all(len(p["id"]) == 8 for p in r))
+        self.assertEqual(self.s.api("/api/estado")["prompts"], r)
+        # ids survive an edit, duplicates get a new one
+        r2 = self.s.api("/api/prompts", {"prompts": [r[1], {**r[1], "nome": "copy"}]})["prompts"]
+        self.assertEqual(r2[0]["id"], r[1]["id"])
+        self.assertNotEqual(r2[1]["id"], r[1]["id"])
+        self.s.api("/api/prompts", {"prompts": [{"texto": "x" * 20001}]}, esperado=400)
+        self.s.api("/api/prompts", {"prompts": "nope"}, esperado=400)
+        self.s.api("/api/prompts", {"prompts": [{"texto": "y"}] * 201}, esperado=400)
+        self.assertEqual(self.s.api("/api/estado")["prompts"], r2)
+        self.s.api("/api/prompts", {"prompts": []})
+        self.assertEqual(self.s.api("/api/estado")["prompts"], [])
+
     def test_preview_isolado(self):
         r = self.s.api("/api/preview", {"codigo": "<h1>hi</h1><script>1</script>", "tipo": "html"})
         st, corpo, cab = self.s.pedir("GET", r["url"])

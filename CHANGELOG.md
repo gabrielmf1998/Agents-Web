@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.7.0 (2026-11-15)
+
+New
+
+- **Hide the chat list.** The button next to the logo (or Ctrl+B) folds the sidebar into a thin icon rail, so
+  the chat gets the whole window. The rail has New chat, Search, Chats (opens the list over the chat), usage,
+  accounts, phone and Settings. A badge counts chats that wait for you, and a small ring shows the session
+  limit of the account in use. The choice is remembered.
+- **Light theme.** Settings, Appearance, Theme: Dark, Light or System (follows the desktop). Both the Claude and
+  the Antigravity look have a light version, and html previews in replies follow it.
+- **Chat width and text size.** Normal, Wide or Full width for the conversation, and four text sizes.
+- **Syntax highlighting** in code blocks (JavaScript/TypeScript, Python, shell, C/C++/Java, Go, Rust, SQL, JSON,
+  CSS, HTML/XML, YAML/TOML/INI, diff and Lua), without any library. Code blocks also get a Wrap button for long
+  lines and show their line count.
+- **Grouped tool calls.** Three or more tool calls in a row fold into one line with the tool names, the lines
+  added and removed and any failures. During a reply the group stays open until the agent starts writing text.
+- **Saved prompts.** The new button in the message box (or "/" at the start of a message) lists your prompts;
+  arrows and Enter pick one. Save the current message as a prompt in one click, and rename, reorder or delete
+  them in "Manage prompts". The first three show up as cards in an empty chat. Stored on the PC, so the phone
+  sees them too.
+- **Image viewer.** Click an image in a reply or an attachment to see it large; Escape closes it.
+- **Keyboard shortcuts.** Ctrl+B (chat list), Ctrl+Shift+O (new chat), Alt+Up and Alt+Down (previous and next
+  chat), Ctrl+, (Settings), "/" to focus the message box and "?" or Ctrl+/ for the list of shortcuts.
+- **Recent chats** on the start screen, to pick up where you left off.
+- **Times in the chat list**: each chat shows when it last changed (5m, 3h, Mon, 12 Nov).
+- **Copy on your own messages**, and long messages you sent fold after 14 lines with Show more.
+- New endpoint `POST /api/prompts`; `GET /api/estado` returns the prompts.
+
+Changes
+
+- Copy buttons say "Copied" in place instead of only showing a toast, and copying also works over plain http
+  on the phone.
+- On phones the stats bar above the message box is one row that scrolls sideways, instead of taking two or
+  three lines.
+- The Settings dialog has an Appearance section and a link to Manage prompts.
+
+Fixes
+
+- The glow behind the Antigravity theme did not pulse and drew a faint red frame, because the dictation button
+  had an animation with the same name.
+
 ## 1.6.0 (2026-11-15)
 
 New

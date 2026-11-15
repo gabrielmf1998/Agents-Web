@@ -23,7 +23,10 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 - **Edit, retry and fork (Claude).** Change a message you sent and get a new reply, or fork any reply into a new chat. The original conversation stays in Claude Code.
 - **Root approvals in the browser.** When an agent runs `pkexec`, a card shows the command and you approve it with your password (https or the PC only) or deny it.
 - **Smart titles.** New chats get a short title written by Claude Haiku from your first message, shown while the reply is still coming in. One click in Settings names your older chats too. Empty chats you leave behind do not pile up in the sidebar.
-- **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, a draft kept per chat, export as Markdown, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
+- **Room to read.** Fold the chat list into a thin icon rail (Ctrl+B), pick a Normal, Wide or Full chat width and one of four text sizes, in a dark or light theme (or follow the system).
+- **Code that reads well.** Syntax highlighting for the common languages without any library, Copy and Wrap buttons on every block, and runs of tool calls folded into one summary line with the lines changed.
+- **Saved prompts.** Keep the prompts you reuse and insert one with "/" at the start of a message or the prompts button. They live on the PC, so the phone has them too.
+- **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, recent chats on the start screen, keyboard shortcuts, an image viewer, a draft kept per chat, export as Markdown, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
 - **Updates from the page.** Settings checks for a new release when you click and installs it. The page can also be installed as an app.
 - **No dependencies.** The server uses only the Python standard library, the page needs no build step or CDN, and the tray uses under 4 MB of RAM.
 
@@ -134,7 +137,8 @@ in the page moves to the new branch, and the original conversation stays in Clau
 
 ### Settings
 
-Settings covers animations, the alert when a reply is ready (chime, vibration and notification), the dictation language,
+Settings covers the appearance (Dark, Light or System theme, chat width, text size, the chat list and animations),
+saved prompts, the alert when a reply is ready (chime, vibration and notification), the dictation language,
 **Rich replies** (a short hint that tells agents about the previews, about 250 tokens),
 **Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog) and
 **Updates** (see below).
@@ -146,7 +150,13 @@ Settings covers animations, the alert when a reply is ready (chime, vibration an
 | Enter | send (on phones Enter adds a new line, use the send button) |
 | Shift+Enter | new line |
 | Ctrl+K (Cmd+K) | search chats and messages |
-| Escape | clear the search, close a menu, leave selection mode |
+| Ctrl+B | hide or show the chat list |
+| Ctrl+Shift+O | new chat |
+| Alt+Up, Alt+Down | previous or next chat in the list |
+| Ctrl+, | Settings |
+| / | focus the message box (outside a text field); at the start of a message, open the saved prompts |
+| ? or Ctrl+/ | list of shortcuts |
+| Escape | clear the search, close a menu or the image viewer, leave selection mode |
 
 What you type stays with its chat: switch to another chat and back, and the unsent text is still there.
 
