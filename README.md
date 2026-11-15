@@ -20,7 +20,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 - **Rich replies.** Markdown with tables, live previews of `html` and `svg` blocks in a sandboxed frame that follows the page theme, and inline images, videos, audio and PDFs for absolute file paths the agent mentions.
 - **Phone friendly.** Pair a phone with a 6 digit PIN or a QR code. You get https on the same port with a private local CA, voice dictation and notifications when a reply is ready.
 - **Root approvals in the browser.** When an agent runs `pkexec`, a card shows the command and you approve it with your password (https or the PC only) or deny it.
-- **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, working folder picker with "New folder", file uploads, resizable sidebar and a stop button.
+- **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, a draft kept per chat, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
 - **No dependencies.** The server uses only the Python standard library, the page needs no build step or CDN, and the tray uses under 4 MB of RAM.
 
 ## Requirements
@@ -105,6 +105,17 @@ Settings covers animations, the alert when a reply is ready (chime, vibration an
 **Rich replies** (a short hint that tells agents about the previews, about 250 tokens) and
 **Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog).
 
+### Keyboard
+
+| Key | Action |
+|---|---|
+| Enter | send (on phones Enter adds a new line, use the send button) |
+| Shift+Enter | new line |
+| Ctrl+K (Cmd+K) | search chats and messages |
+| Escape | clear the search, close a menu, leave selection mode |
+
+What you type stays with its chat: switch to another chat and back, and the unsent text is still there.
+
 ### Port
 
 The default port is 47830. To change it, set `AGENTS_WEB_PORT` in your session environment, for example in
@@ -133,10 +144,30 @@ Uninstalling leaves your Claude Code and agy sessions alone, and keeps the distr
 ## Troubleshooting
 
 - **Page does not open.** Run `agents-web status` and `agents-web log`. A busy port shows up in the log.
+- **The service keeps restarting.** The log of the run before the last restart is kept in
+  `~/.local/share/agents-web/server.log.1`.
 - **Account shows "signed out".** Click Sign in in Accounts, or run `claude` (or `agy`) in a terminal once.
 - **Phone cannot connect.** Both devices must be on the same network. Check the firewall (see Phone). VPN
   and container interfaces are ignored on purpose.
 - **No tray icon on GNOME.** Install an AppIndicator extension, or use the `agents-web` commands.
+
+## Development
+
+Run the server straight from a checkout, then open <http://127.0.0.1:47830/>:
+
+```bash
+python3 src/server.py
+```
+
+The tests start the real server in a throwaway `HOME`, on a free port, with a fake `claude` binary, so they
+never touch your chats, logins or quota. They need only Python 3.10+, `setpriv` and (for the https test)
+`openssl`:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+GitHub Actions runs them on every push, together with a build of the tray icon and `shellcheck`.
 
 ## License
 

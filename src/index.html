@@ -469,6 +469,7 @@ table.tb tr.tot td{font-weight:700;border-bottom:0}
 .item .trecho{grid-column:2/-1;font-size:11.5px;color:var(--mu);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4;margin-top:3px;word-break:break-word}
 mark{background:rgba(255,200,60,.3);color:inherit;border-radius:3px;padding:0 1px}
 mark.foco{box-shadow:0 0 0 2px rgba(255,200,60,.65)}
+#baixo{position:sticky;bottom:10px;z-index:3;display:flex;margin:0 auto;width:34px;height:34px;border-radius:50%;padding:0;box-shadow:0 6px 20px rgba(0,0,0,.45);animation:surge .2s ease-out}
 .novo-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--acs);margin-right:6px;vertical-align:1px}
 #micBtn.ouvindo{color:#fff;background:#d6453d;animation:pulsa 1.2s ease-in-out infinite}
 @keyframes pulsa{50%{box-shadow:0 0 0 6px rgba(214,69,61,.25)}}
@@ -491,7 +492,7 @@ a.btn{text-decoration:none}
  <div class="marca"><div class="logo" id="marcaLogo"></div><div><b>Agents</b><small>Claude Code · Antigravity</small></div></div>
  <div class="lado-acoes">
   <button class="btn pri" id="novoBtn"></button>
-  <div class="busca"><span id="buscaIc"></span><input type="text" id="busca" placeholder="Search chats and messages"></div>
+  <div class="busca"><span id="buscaIc"></span><input type="text" id="busca" placeholder="Search chats and messages" title="Ctrl+K"></div>
   <div class="seg" id="filtros"><button data-f="" class="on">All</button><button data-f="claude">Claude</button><button data-f="agy">Antigravity</button></div>
  </div>
  <div class="lista-cab"><span class="lbl">Chats</span><button class="btn ghost sm" id="selBtn" title="Select chats to delete"></button></div>
@@ -518,7 +519,7 @@ a.btn{text-decoration:none}
   </div>
   <div class="h2" id="chips"></div>
  </header>
- <div id="msgs"><div class="col" id="col"></div><div class="col" id="fila"></div></div>
+ <div id="msgs"><div class="col" id="col"></div><div class="col" id="fila"></div><button class="btn" id="baixo" title="Jump to the latest message" hidden></button></div>
  <div id="barra"></div>
  <div id="comp">
   <div class="caixa">
@@ -656,6 +657,7 @@ $("#anexBtn").innerHTML=ic("clip",18);
 $("#envBtn").innerHTML=ic("send",18);
 $("#parBtn").innerHTML=ic("stop",16);
 $("#dlgX").innerHTML=ic("x");
+$("#baixo").innerHTML=ic("chev",18);
 {const[b1,b2]=$("#agSeg").children;b1.append(spark(14),el("span",{},"Claude Code"));b2.append(logoAg("1.2px","parado"),el("span",{},"Antigravity"))}
 if(LS.get("semanim","0")==="1")document.body.classList.add("sem-anim");
 $("#animBtn").title="Animations, alerts, voice";
@@ -775,7 +777,7 @@ async function carregarEstado(){
  for(const c of EST.chats)if(antes.get(c.id)&&!c.rodando&&!(ES&&CHAT&&CHAT.id===c.id))avisar(c.id,c.titulo,"",false);
  let poda=false;for(const id of[...NOVOS])if(!EST.chats.some(c=>c.id===id)){NOVOS.delete(id);poda=true}if(poda)salvaNovos();
  for(const p of EST.pedidos||[])if(!(ES&&CHAT&&CHAT.id===p.chat))pkAlerta(p,p.chat,p.titulo);
- desenharLista();desenharUso();carregarCli();
+ desenharLista();desenharUso();carregarCli();podaRascunhos();
  const ab=CHAT&&EST.chats.find(c=>c.id===CHAT.id);if(ab&&ab.rodando&&!ES)abrir(CHAT.id,true);
 }
 
@@ -803,7 +805,7 @@ let BUSCA=null,buscaT=0;
 const nrm=s=>String(s).normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 const nrm1=s=>{let o="";for(let i=0;i<s.length;i++){const d=s[i].normalize("NFKD")[0]||s[i];o+=d.toLowerCase()[0]||d}return o};
 let CLI=[],cliT=0;
-const curta=p=>(p||"").replace(EST.home,"~");
+const curta=p=>{p=p||"";const h=EST.home;return h&&(p===h||p.startsWith(h.replace(/\/$/,"")+"/"))?"~"+p.slice(h.replace(/\/$/,"").length):p};
 async function carregarCli(forcar){if(!forcar&&Date.now()-cliT<25000)return;cliT=Date.now();try{CLI=await api("/api/cli/lista");desenharLista()}catch{}}
 const visiveis=()=>{const q=$("#busca").value.trim();
  const base=BUSCA&&BUSCA.q===q?BUSCA.r.map(x=>{const c=EST.chats.find(y=>y.id===x.id);return c&&{...c,busca:x.busca}}).filter(Boolean):EST.chats.filter(c=>!q||nrm(c.titulo).includes(nrm(q)));
@@ -1020,9 +1022,15 @@ function grafico(T,top,cor){
 }
 
 /* ---------- chat ---------- */
+const RASC="rasc.";
+const guardaRascunho=()=>{if(CHAT)LS.set(RASC+CHAT.id,$("#txt").value)};
+function podaRascunhos(){try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith(RASC)&&(!localStorage.getItem(k)||!EST.chats.some(c=>c.id===k.slice(RASC.length))))localStorage.removeItem(k)}}catch{}}
 async function abrir(id,manterLado,origem){
+ const antes=CHAT&&CHAT.id;
+ let novo;try{novo=await api("/api/chats/"+id)}catch(e){toast(cap(e.message));return}
  if(ES){ES.close();ES=null}pararSpin();VIVO=null;
- try{CHAT=await api("/api/chats/"+id)}catch(e){toast(cap(e.message));return}
+ if(antes!==id&&(antes||!$("#txt").value)){if(antes)guardaRascunho();$("#txt").value=LS.get(RASC+id,"");ajusta()}
+ CHAT=novo;
  history.replaceState(null,"","#c="+id);
  if(NOVOS.delete(id))salvaNovos();
  if(!manterLado)$("#lado").classList.remove("aberto");
@@ -1032,7 +1040,7 @@ async function abrir(id,manterLado,origem){
  rodando(CHAT.rodando);
 }
 function semChat(){
- if(ES){ES.close();ES=null}pararSpin();VIVO=null;CHAT=null;history.replaceState(null,"","#");
+ if(ES){ES.close();ES=null}pararSpin();VIVO=null;CHAT=null;history.replaceState(null,"","#");$("#txt").value="";ajusta();
  $("#titulo").value="";$("#chips").textContent="";$("#barra").textContent="";$("#dica").textContent="";
  const av=$("#cabAv");av.replaceWith(Object.assign(avatar(TEMA,true),{id:"cabAv"}));
  [...$("#agSeg").children].forEach(b=>b.classList.toggle("on",b.dataset.a===TEMA));
@@ -1058,7 +1066,7 @@ function desenharCab(){
  if(c.agente==="claude")C.append(chipSel("gauge","Reasoning effort",EFFORT,c.effort||"",v=>salvarCfg("effort",v)));
  const travaPasta=trav&&c.agente!=="claude";
  const pb=el("button",{class:"chip-sel btnc",title:travaPasta?"Antigravity keeps the folder where this conversation started":trav?"Working folder (the conversation continues from the new folder)":"Working folder"});
- pb.innerHTML=ic("folder",14)+esc(c.cwd.replace(EST.home,"~"));pb.disabled=travaPasta;pb.onclick=()=>pasta(c.cwd);C.append(pb);
+ pb.innerHTML=ic("folder",14)+esc(curta(c.cwd));pb.disabled=travaPasta;pb.onclick=()=>pasta(c.cwd);C.append(pb);
  $("#dica").textContent=(c.sessao?`Session ${c.sessao.slice(0,8)} · `:"New session · ")+"Enter to send, Shift+Enter for a new line, drop or paste files to attach";
  $("#txt").placeholder=c.agente==="claude"?"Message Claude…":"Ask Antigravity…";
 }
@@ -1078,7 +1086,7 @@ function vazio(){
  const v=el("div",{class:"vazio"}),mg=el("div",{class:"marca-g"});
  mg.append(c.agente==="claude"?spark(54,"lento"):logoAg("8px"));
  v.append(mg,el("h2",{},c.agente==="claude"?"How can I help you today?":"Antigravity"),
-  el("p",{},`${contaNome(c.conta)} · ${c.cwd.replace(EST.home,"~")} · ${(PERMS[c.agente].find(p=>p[0]===(c.perm||""))||["",c.perm])[1]}`));
+  el("p",{},`${contaNome(c.conta)} · ${curta(c.cwd)} · ${(PERMS[c.agente].find(p=>p[0]===(c.perm||""))||["",c.perm])[1]}`));
  const s=el("div",{class:"sugs"});
  for(const[i,t]of SUGS[c.agente]){const b=el("button",{class:"sug",onclick:()=>{$("#txt").value=t;ajusta();$("#txt").focus()}});b.innerHTML=ic(i,18);b.append(el("span",{},t));s.append(b)}
  v.append(s);return v;
@@ -1157,7 +1165,7 @@ function cartaoPk(p){
   d.innerHTML=ic(p.estado==="ok"?"check":p.estado==="verificando"?"shield":"x",14);
   d.append(el("span",{},"Root"),el("span",{class:"cmd"},p.cmd||"?"),el("span",{},pkTexto(p)));return d}
  const t=el("div",{class:"t"});t.innerHTML=ic("shield",16)+"Administrator permission";
- d.append(t,el("div",{style:"font-size:13px;margin-top:4px"},"The agent wants to run this as root"+(p.cwd?` in ${p.cwd.replace(EST.home,"~")}`:"")),el("div",{class:"cmd"},p.cmd||p.texto||"?"));
+ d.append(t,el("div",{style:"font-size:13px;margin-top:4px"},"The agent wants to run this as root"+(p.cwd?` in ${curta(p.cwd)}`:"")),el("div",{class:"cmd"},p.cmd||p.texto||"?"));
  const responde=async(acao,senha,bts)=>{bts.forEach(b=>b.disabled=true);try{await api("/api/pedido",{id:p.id,acao,senha})}catch(e){toast(cap(e.message));bts.forEach(b=>b.disabled=false)}};
  const neg=el("button",{class:"btn sm"},"Deny");
  const f=el("div",{class:"f"});
@@ -1207,7 +1215,10 @@ function desenharBarra(ctxVivo){
  if(c.usado){const pc=c.janela?Math.min(100,c.usado/c.janela*100):0;B.append(el("span",{class:"st1",html:`<span class="lbl">Context</span><b>${fmt(c.usado)}${c.janela?" / "+fmt(c.janela):""}</b>${c.janela?`<span class="ctxm"><u style="width:${Math.max(1,pc)}%"></u></span><b>${pc.toFixed(1)}%</b>`:""}`}))}
  const cc=EST.contas.find(x=>x.id===CHAT.conta);if(cc){const ls=resumoConta(cc).ls;for(const j of (cc.agente==="agy"?[...ls].sort((a,b)=>b.p-a.p):ls).slice(0,2))add(j.n,fmtP(j.p),j.z?"Resets "+diaHora(j.z):"")}
 }
-function rolar(forcar){const M=$("#msgs");if(forcar||M.scrollHeight-M.scrollTop-M.clientHeight<180)M.scrollTop=M.scrollHeight}
+function rolar(forcar){const M=$("#msgs");if(forcar||M.scrollHeight-M.scrollTop-M.clientHeight<180)M.scrollTop=M.scrollHeight;botaoBaixo()}
+function botaoBaixo(){const M=$("#msgs");$("#baixo").hidden=M.scrollHeight-M.scrollTop-M.clientHeight<400}
+$("#msgs").addEventListener("scroll",botaoBaixo,{passive:true});
+$("#baixo").onclick=()=>{const M=$("#msgs");M.scrollTo({top:M.scrollHeight,behavior:document.body.classList.contains("sem-anim")?"auto":"smooth"})};
 function rodando(s){const e=$("#envBtn");e.hidden=false;e.classList.toggle("enfileirar",!!s);e.title=s?"Add to queue (goes out when this reply ends)":"Send";e.innerHTML=ic(s?"fila":"send",18);$("#parBtn").hidden=!s;document.body.classList.toggle("trabalhando",!!s)}
 
 /* ---------- thinking indicator ---------- */
@@ -1276,7 +1287,7 @@ async function enviar(){
  if(!t.trim()&&!PEND.length)return;
  pedirAviso();
  let r;try{r=await api(`/api/chats/${CHAT.id}/enviar`,{texto:t,anexos:PEND.map(p=>p.id)})}catch(e){toast(cap(e.message));return}
- $("#txt").value="";PEND=[];desenharPend();ajusta();
+ $("#txt").value="";LS.set(RASC+CHAT.id,"");PEND=[];desenharPend();ajusta();
  if(r.fila){try{CHAT.fila=(await api("/api/chats/"+CHAT.id)).fila}catch{}desenharFila();rolar(true);toast("Queued, it goes out when the current reply ends");carregarEstado();return}
  CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();
  const u=[...$("#col").querySelectorAll(".m.u")].pop();if(u)u.classList.add("novo");
@@ -1285,7 +1296,7 @@ async function enviar(){
 $("#envBtn").onclick=enviar;
 $("#parBtn").onclick=()=>CHAT&&api(`/api/chats/${CHAT.id}/parar`,{}).then(()=>toast("Stopping…")).catch(e=>toast(cap(e.message)));
 const ajusta=()=>{const t=$("#txt");t.style.height="auto";t.style.height=Math.min(t.scrollHeight,innerHeight*.4)+"px"};
-$("#txt").addEventListener("input",ajusta);
+$("#txt").addEventListener("input",()=>{ajusta();guardaRascunho()});
 $("#txt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&!matchMedia("(pointer:coarse)").matches){e.preventDefault();enviar()}});
 
 /* ---------- voice dictation ---------- */
@@ -1296,7 +1307,7 @@ $("#micBtn").onclick=()=>{
  if(!isSecureContext){dlgSeguro();return}
  const r=new SR(),T=$("#txt"),base=T.value&&!/\s$/.test(T.value)?T.value+" ":T.value;
  r.lang=LS.get("vozlang","")||navigator.language||"en-US";r.interimResults=true;r.continuous=true;
- r.onresult=e=>{let f="",p="";for(const x of e.results){if(x.isFinal)f+=x[0].transcript;else p+=x[0].transcript}T.value=base+f+p;ajusta()};
+ r.onresult=e=>{let f="",p="";for(const x of e.results){if(x.isFinal)f+=x[0].transcript;else p+=x[0].transcript}T.value=base+f+p;ajusta();guardaRascunho()};
  r.onerror=e=>toast(e.error==="not-allowed"||e.error==="service-not-allowed"?"Microphone blocked, allow it in the site settings":e.error==="no-speech"?"No speech heard":e.error==="network"?"Speech service unreachable":e.error==="aborted"?"Dictation stopped":"Voice error: "+e.error);
  r.onend=()=>{REC=null;$("#micBtn").classList.remove("ouvindo");$("#micBtn").title="Dictate";T.focus()};
  try{r.start();REC=r;$("#micBtn").classList.add("ouvindo");$("#micBtn").title="Stop dictation"}catch(e){toast("Voice error: "+e.message)}
@@ -1336,7 +1347,7 @@ $("#novoBtn").onclick=()=>{
   B.append(el("div",{class:"cart"},n,bt));
  }
 };
-$("#dupBtn").onclick=async()=>{if(!CHAT)return;const n=await api(`/api/chats/${CHAT.id}/duplicar`,{});await carregarEstado();abrir(n.id);toast("New chat with the same settings")};
+$("#dupBtn").onclick=async()=>{if(!CHAT)return;try{const n=await api(`/api/chats/${CHAT.id}/duplicar`,{});await carregarEstado();abrir(n.id);toast("New chat with the same settings")}catch(e){toast(cap(e.message))}};
 $("#apaBtn").onclick=()=>CHAT&&confirmarApagar([CHAT.id]);
 function confirmarApagar(ids){
  const cs=ids.map(id=>EST.chats.find(c=>c.id===id)).filter(Boolean);
@@ -1370,7 +1381,7 @@ function confirmarApagar(ids){
 
 /* ---------- folder ---------- */
 async function pasta(de){
- const j=await api("/api/pastas?de="+encodeURIComponent(de));abreDlg("Working folder");const B=$("#dlgB");
+ let j;try{j=await api("/api/pastas?de="+encodeURIComponent(de))}catch(e){toast(cap(e.message));return}abreDlg("Working folder");const B=$("#dlgB");
  const inp=el("input",{type:"text",value:j.base,style:"flex:1;font-family:var(--mono)"});
  B.append(el("div",{style:"display:flex;gap:8px;margin-bottom:10px"},inp,el("button",{class:"btn",onclick:()=>pasta(inp.value)},"Go"),el("button",{class:"btn pri",onclick:()=>{dlg.close();salvarCfg("cwd",inp.value)}},"Use this folder")));
  const up=el("div",{class:"ses",onclick:()=>pasta(j.pai)});up.innerHTML=ic("up",15)+"<div class='n'>Parent folder</div>";B.append(up);
@@ -1398,15 +1409,15 @@ async function contas(forcar){
   n.append(el("div",{class:"t"},avatar(c.agente),c.agente==="claude"?"Claude":"Google (Antigravity)",el("span",{class:"estado "+(s.logado?"ok":"nao")},s.logado?"Signed in":s.logado===false?"Not signed in":"Unknown")),
    el("small",{},[s.email,s.plano&&cap(s.plano),s.expira&&"session until "+new Date(s.expira).toLocaleDateString("en-GB",{day:"numeric",month:"short"})].filter(Boolean).join(" · ")||" "),
    el("small",{},c.dir||(c.agente==="claude"?"~/.claude (CLI default)":"~/.gemini (CLI default)")));
-  const acts=[nome,el("button",{class:"btn sm",onclick:async()=>{await api("/api/contas/editar",{id:c.id,nome:nome.value});await carregarEstado();toast("Saved")}},"Rename")];
+  const acts=[nome,el("button",{class:"btn sm",onclick:async()=>{try{await api("/api/contas/editar",{id:c.id,nome:nome.value});await carregarEstado();toast("Saved")}catch(e){toast(cap(e.message))}}},"Rename")];
   if(LOCAL){const b=el("button",{class:"btn sm"+(s.logado?"":" pri"),onclick:async()=>{try{await api("/api/contas/login",{id:c.id});toast("Sign-in window opened on the PC")}catch(e){toast(cap(e.message))}}});b.innerHTML=ic("login",14)+(s.logado?"Re-authenticate":"Sign in");acts.push(b)}
-  if(c.id!=="claude1"&&c.id!=="google")acts.push(el("button",{class:"btn sm perigo",onclick:async()=>{if(!confirm(`Remove ${c.nome} from the list? Its sign-in folder stays on disk.`))return;await api("/api/contas/editar",{id:c.id,remover:true});await carregarEstado();contas()}},"Remove"));
+  if(c.id!=="claude1"&&c.id!=="google")acts.push(el("button",{class:"btn sm perigo",onclick:async()=>{if(!confirm(`Remove ${c.nome} from the list? Its sign-in folder stays on disk.`))return;try{await api("/api/contas/editar",{id:c.id,remover:true});await carregarEstado();contas()}catch(e){toast(cap(e.message))}}},"Remove"));
   B.append(el("div",{class:"cart"},n,...acts));
  }
  const nn=el("input",{type:"text",placeholder:"New Claude account name",style:"flex:1"});
- const add=el("button",{class:"btn",onclick:async()=>{if(!nn.value.trim())return toast("Type a name first");await api("/api/contas/nova",{agente:"claude",nome:nn.value.trim()});await carregarEstado();contas()}});add.innerHTML=ic("plus",14)+"Add Claude account";
+ const add=el("button",{class:"btn",onclick:async()=>{if(!nn.value.trim())return toast("Type a name first");try{await api("/api/contas/nova",{agente:"claude",nome:nn.value.trim()});await carregarEstado();contas()}catch(e){toast(cap(e.message))}}});add.innerHTML=ic("plus",14)+"Add Claude account";
  B.append(el("div",{class:"cart"},nn,add));
- const nota=el("p",{class:"nota",html:"Each extra Claude account keeps its own sign-in folder (CLAUDE_CONFIG_DIR), so logins never mix. Sign in opens a Konsole window on the PC. "});
+ const nota=el("p",{class:"nota",html:"Each extra Claude account keeps its own sign-in folder (CLAUDE_CONFIG_DIR), so logins never mix. Sign in opens a terminal window on the PC. "});
  nota.append(el("a",{href:"#",onclick:e=>{e.preventDefault();contas(true)}},"Check again"));B.append(nota);
  await carregarEstado();
 }
@@ -1460,13 +1471,16 @@ async function celular(){
  const ds=await api("/api/celular/dispositivos");
  if(!ds.length)B.append(el("div",{class:"nota",style:"margin:0"},"None yet."));
  for(const d of ds){const n=el("div",{class:"n"});n.innerHTML=`<div class="t">${ic("phone",15)}${esc(d.nome.replace(/\).*/,")").slice(0,60))}</div><small>${esc(d.ip)} · paired ${quando(d.criado)} · last seen ${quando(d.visto)}</small>`;
-  B.append(el("div",{class:"cart"},n,el("button",{class:"btn sm perigo",onclick:async()=>{await api("/api/celular/revogar",{id:d.id});celular();toast("Device revoked")}},"Revoke")))}
+  B.append(el("div",{class:"cart"},n,el("button",{class:"btn sm perigo",onclick:async()=>{try{await api("/api/celular/revogar",{id:d.id});celular();toast("Device revoked")}catch(e){toast(cap(e.message))}}},"Revoke")))}
 }
 
 /* ---------- filters / start ---------- */
 [...$("#filtros").children].forEach(b=>b.onclick=()=>{[...$("#filtros").children].forEach(x=>x.classList.remove("on"));b.classList.add("on");FILTRO=b.dataset.f;desenharLista()});
 $("#busca").oninput=()=>{clearTimeout(buscaT);const q=$("#busca").value.trim();if(q.length<2){BUSCA=null;desenharLista();return}desenharLista();
  buscaT=setTimeout(async()=>{try{const r=await api("/api/busca?q="+encodeURIComponent(q));if($("#busca").value.trim()===q){BUSCA={q,r};desenharLista()}}catch{}},220)};
+document.addEventListener("keydown",e=>{
+ if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&!e.altKey&&e.key.toLowerCase()==="k"&&!dlg.open){e.preventDefault();$("#lado").classList.add("aberto");const b=$("#busca");b.focus();b.select()}});
+$("#busca").addEventListener("keydown",e=>{if(e.key==="Escape"&&$("#busca").value){e.preventDefault();e.stopPropagation();$("#busca").value="";$("#busca").oninput();$("#txt").focus()}});
 $("#menuBtn").onclick=e=>{e.stopPropagation();$("#lado").classList.toggle("aberto")};
 document.addEventListener("click",e=>{const l=$("#lado");if(l.classList.contains("aberto")&&!l.contains(e.target)&&!e.target.closest("#menuBtn")&&!e.target.closest("dialog"))l.classList.remove("aberto")});
 setInterval(()=>{if(document.visibilityState==="visible"||EST.chats.some(c=>c.rodando))carregarEstado()},10000);

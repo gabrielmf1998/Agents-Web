@@ -31,7 +31,8 @@ official `claude` or `agy` binary, started in print mode for each message.
 ### Tray
 
 The tray starts `python3 -u server.py` as its child and checks `GET /saude` every few seconds. When the
-server exits it is restarted, at most 3 times per minute. Quitting the tray (or logging out, which closes
+server exits it is restarted, at most 3 times per minute. Each start moves the previous `server.log` to
+`server.log.1`, so the output of a crash survives the automatic restart. Quitting the tray (or logging out, which closes
 the D-Bus session) stops the server, and that stops every running agent. "Start on login" writes or
 removes `~/.config/autostart/agents-web.desktop`. With `--open` it opens the page in the default browser
 as soon as the server answers.
@@ -106,9 +107,13 @@ hidden folder gets a link for that one file only.
 | `~/.local/share/agents-web/uploads/` | files sent from the browser |
 | `~/.local/share/agents-web/previews/` | the source of rendered html previews |
 | `~/.local/share/agents-web/limites.json`, `uso.json` | usage caches |
-| `~/.local/share/agents-web/server.log` | stdout and stderr of the server, written by the tray |
+| `~/.local/share/agents-web/server.log` | stdout and stderr of the server, written by the tray (`server.log.1`: the run before) |
 
-Writes go to a temporary file followed by a rename, so a crash never leaves half a JSON file.
+Writes go to a temporary file (one per writer) followed by a rename, so a crash never leaves half a JSON
+file and two threads saving the same file never mix their bytes.
+
+These paths do not follow `XDG_CONFIG_HOME` or `XDG_DATA_HOME`. The installer only uses those for the menu
+entry and the icon.
 
 ## HTTP API
 
@@ -146,6 +151,13 @@ that way. They are stable identifiers, not text shown to users.
 Other routes are `/` (the page), `/sw.js` (service worker for notifications), `/ca.crt` (the local CA),
 `/f/<signature>/<path>` (inline files) and `/saude` (health check, loopback only). The event stream may
 take the token as `?t=`, because `EventSource` cannot send headers.
+
+## Tests
+
+`tests/test_server.py` starts `server.py` in a temporary `HOME` with a fake `claude` that speaks stream-json.
+It covers the access rules (token, `Host` check, https on the same port, the CA name constraints), a full
+reply with `--resume`, the queue, stop, search, delete, uploads, signed `/f/` links (folder scope, hidden
+folders, `..`, ranges) and the preview sandbox.
 
 ## Root approvals
 

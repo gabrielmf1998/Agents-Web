@@ -127,6 +127,9 @@ static void inicia(void) {
         sigset_t s; sigemptyset(&s); sigprocmask(SIG_SETMASK, &s, NULL);
         if (chdir(home)) {}
         int fd = open("/dev/null", O_RDONLY); dup2(fd, 0);
+        char velho[1210]; /* keep the log of the previous run (a crash) as server.log.1 */
+        snprintf(velho, sizeof velho, "%s.1", arqlog);
+        if (rename(arqlog, velho)) {}
         int lf = open(arqlog, O_WRONLY | O_CREAT | O_TRUNC, 0600);
         if (lf >= 0) { dup2(lf, 1); dup2(lf, 2); }
         execl("/usr/bin/python3", "python3", "-u", script, (char *)NULL);

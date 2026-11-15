@@ -22,7 +22,7 @@ below keep that power on the PC and on devices you paired yourself.
   not using it.
 - **Paired devices.** Phones get a token only after a pairing. "Mobile" (or "Pair phone" in the tray)
   shows a random 6 digit PIN that works once and expires after 5 minutes. After 5 wrong PINs, pairing is
-  locked for 10 minutes. Each device gets its own 256 bit token in an `HttpOnly`, `SameSite=Strict`
+  locked for 10 minutes. Tokens and PINs are compared in constant time. Each device gets its own 256 bit token in an `HttpOnly`, `SameSite=Strict`
   cookie (`Secure` over https). The list of devices, with their last use, is in Mobile, where any of
   them can be revoked.
 - Every API call needs the token in the `X-Token` header. Browsers do not let other websites set that

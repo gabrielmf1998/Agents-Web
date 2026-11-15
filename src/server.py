@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.3.0"
+VERSAO = "1.3.1"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 CFG_DIR = HOME / ".config/agents-web"
@@ -29,11 +29,16 @@ trava = threading.RLock()
 
 # ---------------------------------------------------------------- config
 def salvar_json(caminho, dados, modo=0o600):
-    tmp = Path(str(caminho) + ".tmp")
-    with open(tmp, "w") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=1)
-    os.chmod(tmp, modo)
-    os.replace(tmp, caminho)
+    # one temp file per writer, so two threads saving the same file never mix their bytes
+    tmp = Path(f"{caminho}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=1)
+        os.chmod(tmp, modo)
+        os.replace(tmp, caminho)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def carregar_config():
@@ -962,6 +967,10 @@ def enviar(cid, texto, anexos_ids, substitui=None):
         if cid in EXECS and not EXECS[cid].acabou and EXECS[cid] is not substitui:
             raise ValueError("this chat is already running")
         chat = ler_chat(cid)
+        if not conta_por_id(chat.get("conta", "")):
+            raise ValueError("the account of this chat was removed. Pick another account in the header"
+                             if not chat.get("sessao") else
+                             "the account of this chat was removed. Add it again in Accounts, or start a new chat")
         if chat["agente"] == "claude" and chat.get("sessao") and conta_por_id(chat["conta"]):
             if chat["sessao"] in ativas_claude(conta_por_id(chat["conta"])):
                 raise ValueError("this conversation is open in a terminal right now. Close it there first (or start a new chat)")
@@ -1835,14 +1844,26 @@ def novo_pin():
 PASSES = {}
 
 
+def igual(a, b):
+    # constant time, and safe for any text a client sends (str compare_digest rejects non-ASCII)
+    return secrets.compare_digest(str(a).encode("utf-8", "surrogateescape"), str(b).encode())
+
+
 def token_valido(tok):
     if not tok:
         return None
-    if secrets.compare_digest(tok, CFG["token"]):
+    if igual(tok, CFG["token"]):
         return "pc"
     for d in CFG["dispositivos"]:
-        if secrets.compare_digest(tok, d["token"]):
-            d["visto"] = time.time()
+        if igual(tok, d["token"]):
+            agora = time.time()
+            if agora - (d.get("visto") or 0) > 600:  # "last seen" survives a restart, saved at most every 10 min
+                d["visto"] = agora
+                try:
+                    with trava:
+                        salvar_json(CFG_FILE, CFG)
+                except OSError:
+                    pass
             return "dispositivo"
     return None
 
@@ -1871,7 +1892,8 @@ class Servidor(socketserver.ThreadingMixIn, http.server.HTTPServer):
                 if not TLS["ctx"]:
                     raise OSError("https is not ready")
                 request = TLS["ctx"].wrap_socket(request, server_side=True)
-            request.settimeout(None)
+            # generous, but finite: SSE pings every 15 s and uploads keep sending, so only dead peers hit it
+            request.settimeout(300)
             self.finish_request(request, client_address)
         except Exception:
             pass
@@ -1991,6 +2013,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.api(metodo, p)
         except (ValueError, FileNotFoundError, KeyError) as e:
             return self.resp(400, {"erro": str(e)})
+        except PermissionError as e:
+            return self.resp(403, {"erro": f"no permission: {e.filename or e.strerror}"})
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception as e:
@@ -2014,7 +2038,7 @@ class H(http.server.BaseHTTPRequestHandler):
             if not tok and pin:
                 if FALHAS["ate"] > time.time():
                     return self.resp(429, LOGIN.replace("%ERRO%", "Too many attempts. Please wait a few minutes."), "text/html; charset=utf-8")
-                if PIN["pin"] and time.time() < PIN["ate"] and secrets.compare_digest(pin, PIN["pin"]):
+                if PIN["pin"] and time.time() < PIN["ate"] and igual(pin, PIN["pin"]):
                     tok = secrets.token_urlsafe(32)
                     with trava:
                         CFG["dispositivos"].append({"token": tok, "nome": (self.headers.get("User-Agent") or "?")[:120],
@@ -2105,9 +2129,9 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
         try:
-            i = max(desde, int(self.headers.get("Last-Event-ID") or 0))
+            i = max(desde, int(self.headers.get("Last-Event-ID") or 0), 0)
         except ValueError:
-            i = desde
+            i = max(desde, 0)
         while True:
             with ex.cond:
                 while i >= len(ex.eventos) and not ex.acabou:
@@ -2385,9 +2409,12 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.resp(200, [{"id": d["token"][:8], "nome": d["nome"], "ip": d["ip"], "criado": d["criado"],
                                     "visto": d.get("visto")} for d in CFG["dispositivos"]])
         if partes == ["celular", "revogar"] and metodo == "POST":
-            alvo = self.corpo_json().get("id", "")
+            alvo = str(self.corpo_json().get("id") or "")
             with trava:
-                CFG["dispositivos"] = [d for d in CFG["dispositivos"] if not d["token"].startswith(alvo) or not alvo]
+                antes = len(CFG["dispositivos"])
+                CFG["dispositivos"] = [d for d in CFG["dispositivos"] if d["token"][:8] != alvo]
+                if len(CFG["dispositivos"]) == antes:
+                    raise ValueError("device not found")
                 salvar_json(CFG_FILE, CFG)
             return self.resp(200, {"ok": True})
         if partes == ["pastas"]:

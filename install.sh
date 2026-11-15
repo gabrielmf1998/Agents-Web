@@ -21,6 +21,9 @@ APP="$HOME/.local/opt/agents-web"
 BIN="$HOME/.local/bin"
 SHARE="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+# server.py always keeps its own data here, whatever XDG_* say (see docs/ARCHITECTURE.md)
+APP_CONF="$HOME/.config/agents-web"
+APP_DATA="$HOME/.local/share/agents-web"
 PORT="${AGENTS_WEB_PORT:-47830}"
 
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -181,13 +184,14 @@ do_uninstall() {
     say "Removing Agents Web"
     rm -rf "$APP"
     rm -f "$BIN/agents-web" "$SHARE/applications/agents-web.desktop" \
-          "$SHARE/icons/hicolor/scalable/apps/agents-web.svg" "$CONF/autostart/agents-web.desktop"
+          "$SHARE/icons/hicolor/scalable/apps/agents-web.svg" "$CONF/autostart/agents-web.desktop" \
+          "$HOME/.config/autostart/agents-web.desktop"
     if [ "$PURGE" = 1 ]; then
-        rm -rf "$CONF/agents-web" "$SHARE/agents-web"
-        say "Deleted chats, uploads and settings ($CONF/agents-web, $SHARE/agents-web)"
+        rm -rf "$APP_CONF" "$APP_DATA"
+        say "Deleted chats, uploads and settings ($APP_CONF, $APP_DATA)"
         echo "   If you installed the PC certificate on a phone, remove it there too (user certificates)."
     else
-        say "Kept your chats and settings in $CONF/agents-web and $SHARE/agents-web (use --purge to delete them)"
+        say "Kept your chats and settings in $APP_CONF and $APP_DATA (use --purge to delete them)"
     fi
     echo "   Packages installed for it were left in place. Your Claude Code and agy sessions are untouched."
 }
