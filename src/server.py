@@ -8,11 +8,12 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.3.1"
+VERSAO = "1.4.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
-CFG_DIR = HOME / ".config/agents-web"
-DATA = HOME / ".local/share/agents-web"
+# AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
+CFG_DIR = Path(os.environ.get("AGENTS_WEB_CONFIG_DIR") or HOME / ".config/agents-web")
+DATA = Path(os.environ.get("AGENTS_WEB_DATA_DIR") or HOME / ".local/share/agents-web")
 CHATS = DATA / "chats"
 UPLOADS = DATA / "uploads"
 CFG_FILE = CFG_DIR / "config.json"
@@ -306,11 +307,18 @@ def apagar_chats(ids, arquivos=False, sessoes=False):
             c = json.loads(arq.read_text())
         except Exception:
             c = {}
-        if sessoes and c.get("sessao") and conta_por_id(c.get("conta", "")):
-            try:
-                livres += apagar_sessao(conta_por_id(c["conta"]), c["sessao"])
-            except ValueError as e:
-                erros.append(f"{c.get('titulo', cid)}: {e}")
+        if sessoes and conta_por_id(c.get("conta", "")):
+            # a fork shares its parent's session until its first reply: only delete what no other chat uses
+            outros = set()
+            for r in listar_chats():
+                if r["id"] != cid and r["id"] not in ids:
+                    outros |= {r.get("sessao")} | set(r.get("antigas") or [])
+            meus = ([] if c.get("fork") else [c.get("sessao")]) + list(c.get("antigas") or [])
+            for sid in dict.fromkeys(x for x in meus if x and x not in outros):
+                try:
+                    livres += apagar_sessao(conta_por_id(c["conta"]), sid)
+                except ValueError as e:
+                    erros.append(f"{c.get('titulo', cid)}: {e}")
         if arquivos:
             for m in c.get("mensagens", []):
                 for a in m.get("anexos") or []:
@@ -363,7 +371,7 @@ def resumo_chat(c):
     return {"id": c["id"], "titulo": c["titulo"], "agente": c["agente"], "conta": c["conta"],
             "modelo": c.get("modelo", ""), "atualizado": c.get("atualizado", 0), "n": len(c["mensagens"]),
             "tokens": tot["total"], "fila": len(c.get("fila") or []), "sessao": c.get("sessao", ""),
-            "cwd": c.get("cwd", ""), "origem": c.get("origem", ""),
+            "cwd": c.get("cwd", ""), "origem": c.get("origem", ""), "antigas": c.get("antigas") or [],
             "rodando": c["id"] in EXECS and not EXECS[c["id"]].acabou}
 
 
@@ -485,7 +493,8 @@ DICA_PK = ("Commands that need root: run them with plain `pkexec` (never sudo) a
 # bin/pkexec (first in the agents' PATH) registers a pkttyagent for itself only and asks for the
 # password here through a unix socket
 PK_BIN = BASE / "bin"
-PK_SOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "agents-web-pk.sock"
+PK_SOCK = (Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+           / ("agents-web-pk.sock" if PORTA == 47830 else f"agents-web-pk-{PORTA}.sock"))
 PK = {"ok": False}
 PK_TOKENS = {}
 PEDIDOS = {}
@@ -643,6 +652,195 @@ def corta(s, n):
     return s if len(s) <= n else s[:n] + f"\n... (+{len(s) - n} caracteres)"
 
 
+# ---------------------------------------------------------------- diffs of file edits
+PATCH_LINHAS = 500
+
+
+def _hunks_limpos(hunks):
+    # the CLI's structuredPatch format, capped so a huge rewrite cannot bloat a chat file
+    out, total, cortado = [], 0, False
+    for h in hunks or []:
+        if not isinstance(h, dict):
+            continue
+        linhas = [str(x)[:400] for x in (h.get("lines") or []) if isinstance(x, str)]
+        if total + len(linhas) > PATCH_LINHAS:
+            linhas = linhas[:max(0, PATCH_LINHAS - total)]
+            cortado = True
+        total += len(linhas)
+        out.append({"a": int(h.get("oldStart") or 0), "b": int(h.get("newStart") or 0), "linhas": linhas})
+        if cortado:
+            break
+    return out, cortado
+
+
+def _diff(antes, depois):
+    import difflib
+    hunks, atual = [], None
+    for l in difflib.unified_diff(antes.splitlines(), depois.splitlines(), lineterm="", n=3):
+        if l.startswith(("---", "+++")) and atual is None:
+            continue
+        m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", l)
+        if m:
+            atual = {"oldStart": int(m.group(1)), "newStart": int(m.group(2)), "lines": []}
+            hunks.append(atual)
+        elif atual is not None:
+            atual["lines"].append(l)
+    return hunks
+
+
+def _le_texto(caminho, limite=2_000_000):
+    try:
+        p = Path(caminho)
+        if p.is_file() and p.stat().st_size <= limite:
+            return p.read_text(errors="replace")
+    except OSError:
+        pass
+    return None
+
+
+def patch_pedido(nome, e, cwd):
+    """Diff of an Edit or Write the agent asks to make, computed before it runs."""
+    if not isinstance(e, dict) or not isinstance(e.get("file_path"), str):
+        return None
+    arq = e["file_path"] if os.path.isabs(e["file_path"]) else os.path.join(cwd or str(HOME), e["file_path"])
+    atual = _le_texto(arq)
+    if nome == "Write" and isinstance(e.get("content"), str):
+        hunks = _diff(atual or "", e["content"])
+        novo = atual is None
+    elif nome == "Edit" and isinstance(e.get("old_string"), str) and isinstance(e.get("new_string"), str):
+        novo = False
+        if atual is not None and e["old_string"] and e["old_string"] in atual:
+            depois = (atual.replace(e["old_string"], e["new_string"]) if e.get("replace_all")
+                      else atual.replace(e["old_string"], e["new_string"], 1))
+            hunks = _diff(atual, depois)
+        else:
+            hunks = _diff(e["old_string"], e["new_string"])
+    else:
+        return None
+    h, cortado = _hunks_limpos(hunks)
+    return {"arquivo": arq, "novo": novo, "hunks": h, "cortado": cortado}
+
+
+def patch_resultado(nome, r):
+    """Diff the CLI reports after an Edit or Write ran (tool_use_result.structuredPatch)."""
+    if nome not in ("Edit", "Write") or not isinstance(r, dict) or not isinstance(r.get("filePath"), str):
+        return None
+    hunks = r.get("structuredPatch") or []
+    novo = r.get("type") == "create"
+    if not hunks and isinstance(r.get("content"), str):
+        hunks = _diff("", r["content"])
+    if not hunks:
+        return None
+    h, cortado = _hunks_limpos(hunks)
+    return {"arquivo": r["filePath"], "novo": novo, "hunks": h, "cortado": cortado}
+
+
+# ---------------------------------------------------------------- approvals asked by Claude Code
+# Every Claude run uses --permission-prompt-tool stdio: when the CLI needs a yes or no (a tool the
+# permission mode does not allow by itself, an AskUserQuestion, a plan to approve) it writes a
+# control_request on stdout and waits for our control_response on stdin. The request becomes a
+# card in the chat, like the root requests above, and shares their list (PEDIDOS).
+LIMPA_ENTRADA = 20_000
+
+
+def _entrada_pub(e):
+    # what the page shows: the same input, long strings shortened
+    if isinstance(e, dict):
+        return {k: _entrada_pub(v) for k, v in list(e.items())[:60]}
+    if isinstance(e, list):
+        return [_entrada_pub(v) for v in e[:60]]
+    if isinstance(e, str) and len(e) > LIMPA_ENTRADA:
+        return e[:LIMPA_ENTRADA] + f"\n... (+{len(e) - LIMPA_ENTRADA} characters)"
+    return e
+
+
+def ctl_novo(ex, rid, r):
+    nome = str(r.get("tool_name") or "?")
+    entrada = r.get("input") if isinstance(r.get("input"), dict) else {}
+    tipo = {"AskUserQuestion": "pergunta", "ExitPlanMode": "plano"}.get(nome, "ferramenta")
+    pub = {"id": secrets.token_hex(8), "tipo": tipo, "ferramenta": nome, "entrada": _entrada_pub(entrada),
+           "descricao": str(r.get("description") or "")[:600], "caminho": str(r.get("blocked_path") or "")[:600],
+           "ts": time.time(), "estado": "pendente"}
+    if tipo == "ferramenta":
+        pt = patch_pedido(nome, entrada, ex.chat.get("cwd"))
+        if pt:
+            pub["patch"] = pt
+    p = {"pub": pub, "ex": ex, "rid": rid, "entrada": entrada, "ctl": True}
+    with PK_TRAVA:
+        PEDIDOS[pub["id"]] = p
+    ex.msg.setdefault("pedidos", []).append(pub)
+    ex.emite({"t": "pedido", **pub})
+    return p
+
+
+def _chat_muda(ex, **campos):
+    # settings changed from an approval card, saved now and kept by the running reply too
+    ex.chat.update(campos)
+    with trava:
+        try:
+            c = ler_chat(ex.chat_id)
+        except (FileNotFoundError, ValueError):
+            return
+        c.update(campos)
+        gravar_chat(c)
+
+
+def ctl_responde(p, d):
+    pub, ex, acao = p["pub"], p["ex"], d.get("acao")
+    motivo = re.sub(r"\s+", " ", str(d.get("motivo") or "")).strip()[:2000]
+    muda = {}  # chat settings this answer changes, saved only once the agent got the answer
+    if pub["tipo"] == "ferramenta":
+        if acao in ("aprovar", "sempre"):
+            resp, estado = {"behavior": "allow", "updatedInput": p["entrada"]}, "permitido"
+            if acao == "sempre":
+                lista = [x for x in (ex.chat.get("permitidos") or []) if x != pub["ferramenta"]]
+                muda["permitidos"] = (lista + [pub["ferramenta"]])[-50:]
+                pub["sempre"] = True
+        elif acao == "negar":
+            resp = {"behavior": "deny", "message": "The user denied this in the web interface"
+                    + (f" and said: {motivo}" if motivo else ".")}
+            estado = "negado"
+        else:
+            raise ValueError("unknown answer")
+    elif pub["tipo"] == "pergunta":
+        if acao == "responder":
+            perguntas = [q.get("question") for q in (p["entrada"].get("questions") or []) if isinstance(q, dict)]
+            dadas = d.get("respostas") if isinstance(d.get("respostas"), dict) else {}
+            respostas = {q: re.sub(r"[\r\n]+", " ", str(dadas.get(q) or "")).strip()[:2000] for q in perguntas}
+            if not any(respostas.values()):
+                raise ValueError("pick or type an answer first")
+            resp = {"behavior": "allow", "updatedInput": {**p["entrada"], "answers": respostas}}
+            pub["respostas"], estado = respostas, "respondido"
+        elif acao == "negar":
+            resp = {"behavior": "deny", "message": "The user chose not to answer"
+                    + (f" and said: {motivo}" if motivo else ". Continue with your best judgement.")}
+            estado = "negado"
+        else:
+            raise ValueError("unknown answer")
+    else:  # plano
+        if acao == "aprovar":
+            modo = d.get("modo") if d.get("modo") in ("acceptEdits", "manual") else "manual"
+            resp = {"behavior": "allow", "updatedInput": p["entrada"]}
+            if modo == "acceptEdits":
+                resp["updatedPermissions"] = [{"type": "setMode", "mode": "acceptEdits", "destination": "session"}]
+            # like the terminal: once the plan is approved, the chat leaves plan mode
+            muda["perm"] = modo
+            pub["modo"], estado = modo, "aprovado"
+        elif acao == "negar":
+            resp = {"behavior": "deny", "message": "The user wants changes to the plan"
+                    + (f": {motivo}" if motivo else ". Ask what to change.")}
+            estado = "negado"
+        else:
+            raise ValueError("unknown answer")
+    if motivo and estado == "negado":
+        pub["motivo"] = motivo
+    if not ex.responde_ctl(p["rid"], resp):
+        raise ValueError("the agent is no longer waiting for this")
+    if muda:
+        _chat_muda(ex, **muda)
+    pk_muda(p, estado)
+
+
 class Execucao:
     def __init__(self, chat, texto, anexos):
         self.chat_id = chat["id"]
@@ -659,6 +857,8 @@ class Execucao:
                     "ts": time.time()}
         self.inicio = time.time()
         self.pk = secrets.token_hex(16)
+        self.trava_in = threading.Lock()
+        self.iniciou = False
 
     def emite(self, ev):
         with self.cond:
@@ -668,7 +868,10 @@ class Execucao:
     def comando(self):
         c = self.chat
         if c["agente"] == "claude":
-            cmd = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages"]
+            # stream-json on stdin too: the prompt goes in as a message and stdin stays open for the
+            # answers to permission requests, questions and plan approvals, and for a clean interrupt
+            cmd = [CLAUDE, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                   "--include-partial-messages", "--permission-prompt-tool", "stdio"]
             if c.get("modelo"):
                 cmd += ["--model", c["modelo"]]
             if c.get("perm"):
@@ -677,12 +880,18 @@ class Execucao:
                 cmd += ["--effort", c["effort"]]
             if c.get("sessao"):
                 cmd += ["--resume", c["sessao"]]
+                if isinstance(c.get("fork"), dict):
+                    # edit and resend, retry, fork: branch the CLI session at an earlier reply (the
+                    # original session stays as it was)
+                    if c["fork"].get("em"):
+                        cmd += ["--resume-session-at", c["fork"]["em"]]
+                    cmd += ["--fork-session"]
             extra = [DICA] if CFG["padrao"].get("dica", True) else []
             if pk_ativo():
                 extra.append(DICA_PK)
             if extra:
                 cmd += ["--append-system-prompt", " ".join(extra)]
-            return cmd, "stdin"
+            return cmd, "json"
         cmd = [AGY, "--output-format", "stream-json"]
         if c.get("modelo"):
             cmd += ["--model", c["modelo"]]
@@ -739,7 +948,7 @@ class Execucao:
             PK_TOKENS[self.pk] = self
             env.update(PATH=f"{PK_BIN}:{env['PATH']}", AGW_PK=self.pk, AGW_PK_SOCK=str(PK_SOCK))
         self.proc = subprocess.Popen(cmd, cwd=cwd, env=env, start_new_session=True,
-                                     stdin=subprocess.PIPE if modo == "stdin" else subprocess.DEVNULL,
+                                     stdin=subprocess.PIPE if modo == "json" else subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.erros = b""
 
@@ -747,12 +956,9 @@ class Execucao:
             for linha in self.proc.stderr:
                 self.erros = (self.erros + linha)[-6000:]
         threading.Thread(target=le_erro, daemon=True).start()
-        if modo == "stdin":
-            try:
-                self.proc.stdin.write(texto.encode())
-                self.proc.stdin.close()
-            except BrokenPipeError:
-                pass
+        if modo == "json":
+            self.escreve({"type": "user", "message": {"role": "user", "content": texto},
+                          "parent_tool_use_id": None, "session_id": ""})
         parse = self.parse_claude if c["agente"] == "claude" else self.parse_agy
         self.vistos = set()
         self.ferr = {}
@@ -768,6 +974,7 @@ class Execucao:
                 parse(d)
             except Exception as e:
                 self.emite({"t": "aviso", "s": f"unrecognized event: {e!r}"})
+        self.fecha_entrada()
         rc = self.proc.wait()
         if rc != 0 and not self.msg["texto"] and not self.msg["erro"] and not self.parado:
             self.msg["erro"] = f"exited with code {rc}: " + self.erros.decode(errors="replace")[-1500:]
@@ -776,7 +983,25 @@ class Execucao:
     # ---- Claude Code stream-json
     def parse_claude(self, d):
         t = d.get("type")
-        if t == "system" and d.get("subtype") == "init":
+        if t == "control_request":
+            r = d.get("request") or {}
+            if r.get("subtype") != "can_use_tool":
+                self.escreve({"type": "control_response", "response": {
+                    "subtype": "error", "request_id": d.get("request_id"), "error": "not supported by Agents Web"}})
+            elif (r.get("tool_name") not in ("AskUserQuestion", "ExitPlanMode")
+                  and r.get("tool_name") in (self.chat.get("permitidos") or [])):
+                self.responde_ctl(d.get("request_id"), {"behavior": "allow", "updatedInput": r.get("input") or {}})
+            else:
+                ctl_novo(self, d.get("request_id"), r)
+        elif t == "control_cancel_request":
+            with PK_TRAVA:
+                for p in PEDIDOS.values():
+                    if p["ex"] is self and p.get("rid") == d.get("request_id") and p["pub"]["estado"] == "pendente":
+                        pk_muda(p, "cancelado")
+        elif t == "control_response":
+            pass
+        elif t == "system" and d.get("subtype") == "init":
+            self.iniciou = True
             self.chat["sessao"] = d.get("session_id", self.chat.get("sessao", ""))
             self.msg["modelo"] = d.get("model", "")
             self.emite({"t": "sistema", "modelo": self.msg["modelo"], "sessao": self.chat["sessao"],
@@ -799,6 +1024,11 @@ class Execucao:
                     if b.get("type") == "tool_use":
                         self.emite({"t": "sub", "s": b.get("name", "")})
                 return
+            blocos = m.get("content") or []
+            if (d.get("uuid") and any(b.get("type") == "text" for b in blocos)
+                    and not any(b.get("type") == "tool_use" for b in blocos)):
+                # where a later edit, retry or fork branches off: a text block with no pending tool call
+                self.msg["uuid"] = d["uuid"]
             u = m.get("usage") or {}
             ctx = sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens",
                                                      "cache_read_input_tokens", "output_tokens"))
@@ -823,15 +1053,21 @@ class Execucao:
         elif t == "user":
             if d.get("parent_tool_use_id"):
                 return
-            for b in (d.get("message", {}).get("content") or []):
-                if isinstance(b, dict) and b.get("type") == "tool_result":
-                    cont = b.get("content")
-                    if isinstance(cont, list):
-                        cont = "\n".join(x.get("text", "[" + x.get("type", "?") + "]") for x in cont if isinstance(x, dict))
-                    f = self.ferr.get(b.get("tool_use_id"))
-                    if f:
-                        f.update(saida=corta(cont or "", 6000), erro=bool(b.get("is_error")), fim=True)
-                        self.emite({"t": "resultado", "id": f["id"], "saida": f["saida"], "erro": f["erro"]})
+            blocos = [b for b in (d.get("message", {}).get("content") or [])
+                      if isinstance(b, dict) and b.get("type") == "tool_result"]
+            for b in blocos:
+                cont = b.get("content")
+                if isinstance(cont, list):
+                    cont = "\n".join(x.get("text", "[" + x.get("type", "?") + "]") for x in cont if isinstance(x, dict))
+                f = self.ferr.get(b.get("tool_use_id"))
+                if f:
+                    f.update(saida=corta(cont or "", 6000), erro=bool(b.get("is_error")), fim=True)
+                    ev = {"t": "resultado", "id": f["id"], "saida": f["saida"], "erro": f["erro"]}
+                    if len(blocos) == 1 and not f["erro"]:
+                        pt = patch_resultado(f["nome"], d.get("tool_use_result"))
+                        if pt:
+                            f["patch"] = ev["patch"] = pt
+                    self.emite(ev)
         elif t == "rate_limit_event":
             LIMITES[self.chat["conta"]] = {"info": d.get("rate_limit_info", {}), "quando": time.time()}
             try:
@@ -853,13 +1089,41 @@ class Execucao:
                 self.msg["contexto"]["janela"] = principal.get("contextWindow")
                 self.msg["modelos"] = {k: {"custo": v.get("costUSD"), "saida": v.get("outputTokens")} for k, v in mu.items()}
             if d.get("is_error"):
-                self.msg["erro"] = str(d.get("result") or d.get("subtype") or "erro")
+                if not self.parado:
+                    self.msg["erro"] = str(d.get("result") or d.get("subtype") or "erro")
             elif not self.msg["texto"] and d.get("result"):
                 self.msg["texto"] = d["result"]
             if d.get("permission_denials"):
                 self.msg["negadas"] = [x.get("tool_name") for x in d["permission_denials"]]
             if d.get("session_id"):
                 self.chat["sessao"] = d["session_id"]
+            self.fecha_entrada()  # the turn is over: closing stdin lets the CLI exit
+
+    # ---- stdin of a Claude run
+    def escreve(self, d):
+        with self.trava_in:
+            ent = self.proc.stdin if self.proc else None
+            if not ent or ent.closed:
+                return False
+            try:
+                ent.write((json.dumps(d, ensure_ascii=False) + "\n").encode())
+                ent.flush()
+                return True
+            except (BrokenPipeError, OSError, ValueError):
+                return False
+
+    def responde_ctl(self, rid, resposta):
+        return self.escreve({"type": "control_response",
+                             "response": {"subtype": "success", "request_id": rid, "response": resposta}})
+
+    def fecha_entrada(self):
+        with self.trava_in:
+            ent = self.proc.stdin if self.proc else None
+            if ent and not ent.closed:
+                try:
+                    ent.close()
+                except OSError:
+                    pass
 
     # ---- Antigravity CLI stream-json
     def parse_agy(self, d):
@@ -915,6 +1179,12 @@ class Execucao:
 
     def parar(self):
         self.parado = True
+        if self.proc and self.proc.poll() is None and self.escreve(
+                {"type": "control_request", "request_id": "stop-" + secrets.token_hex(4), "request": {"subtype": "interrupt"}}):
+            # a clean interrupt keeps the CLI session consistent, like Esc in the terminal
+            fim = time.time() + 4
+            while time.time() < fim and self.proc.poll() is None:
+                time.sleep(0.1)
         if self.proc and self.proc.poll() is None:
             try:
                 os.killpg(self.proc.pid, signal.SIGTERM)
@@ -927,11 +1197,18 @@ class Execucao:
     def finalizar(self):
         PK_TOKENS.pop(self.pk, None)
         with PK_TRAVA:
-            for p in PEDIDOS.values():
-                if p["ex"] is self and p["pub"]["estado"] == "pendente":
-                    p["resp"] = {"r": "negar", "msg": "the reply ended before an answer"}
-                    pk_muda(p, "cancelado")
-                    p["ev"].set()
+            for k, p in list(PEDIDOS.items()):
+                if p["ex"] is not self:
+                    continue
+                if p["pub"]["estado"] == "pendente":
+                    if p.get("ctl"):
+                        pk_muda(p, "cancelado")
+                    else:
+                        p["resp"] = {"r": "negar", "msg": "the reply ended before an answer"}
+                        pk_muda(p, "cancelado")
+                        p["ev"].set()
+                if p.get("ctl"):
+                    PEDIDOS.pop(k, None)
         self.msg["duracao"] = round(time.time() - self.inicio, 1)
         self.msg["texto"] = self.msg["texto"].strip()
         if self.parado:
@@ -940,6 +1217,8 @@ class Execucao:
             try:
                 atual = ler_chat(self.chat_id)
                 atual["sessao"] = self.chat.get("sessao", atual.get("sessao", ""))
+                if self.iniciou:
+                    atual.pop("fork", None)  # the branch exists now, under its own session id
                 atual["mensagens"].append(self.msg)
                 gravar_chat(atual)
             except FileNotFoundError:
@@ -988,6 +1267,75 @@ def enviar(cid, texto, anexos_ids, substitui=None):
         EXECS[cid] = ex
     threading.Thread(target=ex.rodar, daemon=True).start()
     return ex
+
+
+def _ponto_de_volta(c, i):
+    """The reply a branch continues from: the assistant message right before message i."""
+    if c["agente"] != "claude":
+        raise ValueError("editing and forking work with Claude chats only")
+    if i == 0:
+        return None
+    ant = c["mensagens"][i - 1]
+    if ant.get("papel") != "assistente" or not ant.get("uuid") or not c.get("sessao"):
+        raise ValueError("this part of the conversation is from before Agents Web 1.4, so it cannot be branched")
+    return ant["uuid"]
+
+
+def reenviar(cid, i, texto):
+    """Edit a message of yours (or send it again) and continue from there. The CLI session forks, so
+    the original stays intact in Claude Code; the web chat drops what came after."""
+    with trava:
+        ex = EXECS.get(cid)
+        if ex and not ex.acabou:
+            raise ValueError("stop the current reply first")
+        c = ler_chat(cid)
+        try:
+            i = int(i)
+        except (TypeError, ValueError):
+            raise ValueError("message not found")
+        if not 0 <= i < len(c["mensagens"]) or c["mensagens"][i].get("papel") != "usuario":
+            raise ValueError("message not found")
+        conta = conta_por_id(c.get("conta", ""))
+        if not conta:
+            raise ValueError("the account of this chat was removed. Add it again in Accounts, or start a new chat")
+        if c.get("sessao") and c["sessao"] in ativas_claude(conta):
+            raise ValueError("this conversation is open in a terminal right now. Close it there first")
+        texto = c["mensagens"][i]["texto"] if texto is None else str(texto)
+        anexos = [a.get("id") for a in (c["mensagens"][i].get("anexos") or []) if a.get("id")]
+        if not texto.strip() and not anexos:
+            raise ValueError("empty message")
+        em = _ponto_de_volta(c, i)
+        if c.get("sessao"):
+            c["antigas"] = list(dict.fromkeys((c.get("antigas") or []) + [c["sessao"]]))[-100:]
+        if em:
+            c["fork"] = {"em": em}
+        else:
+            c.pop("fork", None)
+            c["sessao"] = ""
+        c["mensagens"] = c["mensagens"][:i]
+        c["fila"] = []
+        gravar_chat(c)
+        enviar(cid, texto, anexos)
+
+
+def bifurcar(cid, i):
+    """A new chat with the conversation up to reply i; its first message branches the CLI session there."""
+    c = ler_chat(cid)
+    try:
+        i = int(i)
+    except (TypeError, ValueError):
+        raise ValueError("message not found")
+    if not 0 <= i < len(c["mensagens"]) or c["mensagens"][i].get("papel") != "assistente":
+        raise ValueError("pick a reply to fork from")
+    em = _ponto_de_volta(c, i + 1)
+    n = novo_chat({**{k: c[k] for k in ("agente", "conta", "modelo", "perm", "effort", "cwd")},
+                   "titulo": ("Fork of " + c["titulo"])[:120], "sessao": c.get("sessao", "")})
+    with trava:
+        n = ler_chat(n["id"])
+        n["mensagens"] = json.loads(json.dumps(c["mensagens"][:i + 1]))
+        n["fork"] = {"em": em}
+        gravar_chat(n)
+    return n
 
 
 def proxima_fila(cid, atual):
@@ -1620,7 +1968,11 @@ def lista_cli():
         for p in list(_jl):
             if p not in vivos:
                 _jl.pop(p, None)
-    ligados = {c.get("sessao") for c in listar_chats() if c.get("sessao")}
+    ligados = set()
+    for c in listar_chats():
+        ligados |= {c.get("sessao")} | set(c.get("antigas") or [])
+    ligados.discard("")
+    ligados.discard(None)
     ligados |= {e.chat.get("sessao") for e in list(EXECS.values()) if e.chat.get("sessao")}
     nomes = CFG.get("titulos_cli") or {}
     out = [x for x in out if x["sid"] not in ligados]
@@ -1775,6 +2127,8 @@ def importar_cli(conta, sid):
                 else:
                     msgs.append({"papel": "assistente", "texto": txt, "ferramentas": ferr, "uso": {}, "importada": True,
                                  "contexto": {}, "ts": quando, "modelo": m.get("model", "")})
+                if d.get("uuid") and txt and not ferr:
+                    msgs[-1]["uuid"] = d["uuid"]
     else:
         for x in lista_agy(conta):
             if x["sid"] == sid:
@@ -1866,6 +2220,89 @@ def token_valido(tok):
                     pass
             return "dispositivo"
     return None
+
+
+# ---------------------------------------------------------------- app icon and manifest (install on a phone)
+def arquivo_app(nome):
+    for d in (BASE, BASE.parent / "data"):  # installed copy, or a git checkout
+        if (d / nome).is_file():
+            return d / nome
+    return None
+
+
+MANIFESTO = {"name": "Agents", "short_name": "Agents", "description": "Claude Code and Antigravity on this PC",
+             "start_url": "/", "scope": "/", "display": "standalone", "background_color": "#111111",
+             "theme_color": "#111111",
+             "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                       {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                       {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"}]}
+
+
+# ---------------------------------------------------------------- updates (only when asked in Settings)
+REPO_GH, REPO_GL = "gabrielmf1998/Agents-Web", "gabriel17166/agents-web"
+INSTALADORES = {"github": f"https://raw.githubusercontent.com/{REPO_GH}/main/install.sh",
+                "gitlab": f"https://gitlab.com/{REPO_GL}/-/raw/main/install.sh"}
+ATUALIZA = {"quando": 0, "dados": None, "rodando": 0}
+ATUALIZA_LOG = DATA / "update.log"
+
+
+def origem():
+    try:
+        o = (BASE / "source").read_text().strip()
+    except OSError:
+        o = ""
+    return o if o in INSTALADORES else "github"
+
+
+def _vt(v):
+    return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3]) or (0,)
+
+
+def instalado():
+    # an installed copy (the installer put itself next to the server), not a git checkout
+    return (BASE / "install.sh").is_file() and (BASE / "agents-web-tray").is_file()
+
+
+def checar_atualizacao(forcar=False):
+    if ATUALIZA["dados"] and not forcar and time.time() - ATUALIZA["quando"] < 600:
+        return ATUALIZA["dados"]
+    o = origem()
+    if o == "gitlab":
+        url = f"https://gitlab.com/api/v4/projects/{urllib.parse.quote(REPO_GL, safe='')}/releases/permalink/latest"
+    else:
+        url = f"https://api.github.com/repos/{REPO_GH}/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "agents-web", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as f:
+            j = json.loads(f.read())
+    except Exception as e:
+        raise ValueError(f"could not reach {'GitLab' if o == 'gitlab' else 'GitHub'}: {e}")
+    tag = str(j.get("tag_name") or "")
+    dados = {"atual": VERSAO, "ultima": tag.lstrip("v"), "nova": _vt(tag) > _vt(VERSAO),
+             "notas": str(j.get("body") or j.get("description") or "")[:8000],
+             "url": j.get("html_url") or (j.get("_links") or {}).get("self") or "",
+             "data": j.get("published_at") or j.get("released_at") or "", "origem": o, "instalavel": instalado()}
+    ATUALIZA.update(quando=time.time(), dados=dados)
+    return dados
+
+
+def atualizar():
+    if not instalado():
+        raise ValueError("this copy was not installed by install.sh, update it with git")
+    rod = sum(1 for e in EXECS.values() if not e.acabou)
+    if rod:
+        raise ValueError(f"wait for the running {'reply' if rod == 1 else f'{rod} replies'} to finish, or stop "
+                         f"{'it' if rod == 1 else 'them'}: updating restarts the service")
+    if time.time() - ATUALIZA["rodando"] < 120:
+        raise ValueError("an update is already running")
+    o = origem()
+    script = (f"sleep 1; echo \"== $(date) update from {o}\"; curl -fsSL {shlex.quote(INSTALADORES[o])} "
+              f"| bash -s -- --no-deps{' --gitlab' if o == 'gitlab' else ''}")
+    with open(ATUALIZA_LOG, "a") as log:
+        # its own session: the tray stops this server's whole process group while it reinstalls
+        subprocess.Popen(["bash", "-c", script], cwd=str(HOME), stdin=subprocess.DEVNULL, stdout=log,
+                         stderr=subprocess.STDOUT, start_new_session=True, close_fds=True)
+    ATUALIZA["rodando"] = time.time()
 
 
 # ---------------------------------------------------------------- HTTP
@@ -1985,8 +2422,15 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self.resp(200, f"ok {rod}", "text/plain")
             if p in ("/", "/index.html") and metodo == "GET":
                 return self.pagina()
-            if p == "/favicon.ico":
-                return self.resp(204, b"", "image/x-icon")
+            if p in ("/favicon.ico", "/icon.svg", "/icon-192.png", "/icon-512.png"):
+                nome = {"/favicon.ico": "agents-web.svg", "/icon.svg": "agents-web.svg"}.get(p, p[1:])
+                arq = arquivo_app(nome)
+                if not arq:
+                    return self.resp(404 if p != "/favicon.ico" else 204, b"", "text/plain")
+                return self.resp(200, arq.read_bytes(), "image/svg+xml" if nome.endswith(".svg") else "image/png",
+                                 {"Cache-Control": "max-age=86400"})
+            if p == "/manifest.webmanifest":
+                return self.resp(200, json.dumps(MANIFESTO), "application/manifest+json")
             if p == "/sw.js":
                 return self.resp(200, SW_JS, "text/javascript; charset=utf-8")
             if p == "/ca.crt":
@@ -2161,6 +2605,13 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.resp(200, buscar(self.q.get("q", [""])[0]))
         if partes == ["pedido"] and metodo == "POST":
             d = self.corpo_json()
+            with PK_TRAVA:
+                p = PEDIDOS.get(str(d.get("id")))
+                if p and p.get("ctl"):
+                    if p["pub"]["estado"] != "pendente":
+                        raise ValueError("this request is no longer waiting")
+                    ctl_responde(p, d)
+                    return self.resp(200, {"ok": True})
             pk_responde(d.get("id"), d.get("acao"), d.get("senha"), self.tls or self.local)
             d = None
             return self.resp(200, {"ok": True})
@@ -2194,6 +2645,11 @@ class H(http.server.BaseHTTPRequestHandler):
         if partes == ["fixar"] and metodo == "POST":
             d = self.corpo_json()
             return self.resp(200, {"fixados": fixar(d.get("id"), bool(d.get("fixo")))})
+        if partes == ["atualizacao"]:
+            return self.resp(200, checar_atualizacao(self.q.get("forcar", ["0"])[0] == "1"))
+        if partes == ["atualizar"] and metodo == "POST":
+            atualizar()
+            return self.resp(200, {"ok": True})
         if partes == ["preferencias"] and metodo == "POST":
             d = self.corpo_json()
             with trava:
@@ -2309,6 +2765,22 @@ class H(http.server.BaseHTTPRequestHandler):
                 c = ler_chat(cid)
                 n = novo_chat({k: c[k] for k in ("agente", "conta", "modelo", "perm", "effort", "cwd")})
                 return self.resp(200, n)
+            if acao == "reenviar":
+                d = self.corpo_json()
+                reenviar(cid, d.get("indice"), d.get("texto"))
+                return self.resp(200, {"ok": True})
+            if acao == "bifurcar":
+                return self.resp(200, bifurcar(cid, self.corpo_json().get("indice")))
+            if acao == "permitidos":
+                with trava:
+                    c = ler_chat(cid)
+                    tira = self.corpo_json().get("tirar")
+                    c["permitidos"] = [x for x in (c.get("permitidos") or []) if tira not in (None, x)]
+                    gravar_chat(c)
+                ex = EXECS.get(cid)
+                if ex and not ex.acabou:
+                    ex.chat["permitidos"] = list(c["permitidos"])
+                return self.resp(200, {"permitidos": c["permitidos"]})
         if partes == ["upload"] and metodo == "POST":
             n = int(self.headers.get("Content-Length") or 0)
             if n <= 0 or n > 8 * 1024 ** 3:
@@ -2443,6 +2915,11 @@ def encerrar(*_):
                 os.killpg(ex.proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+    if PK["ok"]:
+        try:
+            PK_SOCK.unlink()
+        except OSError:
+            pass
     os._exit(0)
 
 

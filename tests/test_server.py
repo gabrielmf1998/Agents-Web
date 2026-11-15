@@ -25,31 +25,106 @@ RAIZ = Path(__file__).resolve().parent.parent
 SERVIDOR = RAIZ / "src" / "server.py"
 SID = "0b6f3c2e-6d55-4f3e-9a51-1f2e3d4c5b6a"
 
-# A tiny stand-in for the Claude Code CLI. It logs its argv, then answers in stream-json.
+# A tiny stand-in for the Claude Code CLI. It logs its argv and what it reads on stdin, then answers in
+# stream-json, with the same control protocol as `claude -p --input-format stream-json
+# --permission-prompt-tool stdio` (permission requests, questions, plans, interrupt).
 FAKE_CLAUDE = textwrap.dedent(f"""\
     #!{sys.executable}
     import json, os, sys, time
     args = sys.argv[1:]
-    with open(os.environ["HOME"] + "/claude-args.jsonl", "a") as f:
-        f.write(json.dumps(args) + "\\n")
+    H = os.environ["HOME"]
+    def log(nome, d):
+        with open(H + "/" + nome, "a") as f:
+            f.write(json.dumps(d) + "\\n")
+    log("claude-args.jsonl", args)
     if args[:2] == ["auth", "status"]:
         print(json.dumps({{"loggedIn": True, "email": "test@example.invalid", "subscriptionType": "pro"}}))
         sys.exit(0)
-    prompt = sys.stdin.read()
-    out = lambda d: (print(json.dumps(d)), sys.stdout.flush())
+    def ler():
+        l = sys.stdin.readline()
+        if not l:
+            return None
+        d = json.loads(l)
+        log("claude-stdin.jsonl", d)
+        return d
+    def out(d):
+        print(json.dumps(d))
+        sys.stdout.flush()
+    def ate_fechar():
+        while ler() is not None:
+            pass
+    def interrompido(d):
+        if d.get("type") == "control_request" and d["request"].get("subtype") == "interrupt":
+            out({{"type": "control_response", "response": {{"subtype": "success", "request_id": d["request_id"]}}}})
+            out({{"type": "result", "subtype": "error_during_execution", "is_error": True, "session_id": "{SID}"}})
+            ate_fechar()
+            sys.exit(0)
+    def pede(nome, entrada, rid):
+        out({{"type": "control_request", "request_id": rid, "request": {{"subtype": "can_use_tool",
+             "tool_name": nome, "display_name": nome, "input": entrada, "tool_use_id": "tu-" + rid}}}})
+        while True:
+            d = ler()
+            if d is None:
+                sys.exit(5)
+            interrompido(d)
+            if d.get("type") == "control_response" and d["response"].get("request_id") == rid:
+                return d["response"]["response"]
+    c = ((ler() or {{}}).get("message") or {{}}).get("content")
+    if isinstance(c, list):
+        c = "\\n".join(b.get("text", "") for b in c if isinstance(b, dict))
+    prompt = c or ""
+    with open(H + "/claude-args.jsonl") as f:
+        n = len(f.read().splitlines())
     out({{"type": "system", "subtype": "init", "session_id": "{SID}", "model": "claude-fake-1",
          "permissionMode": "bypassPermissions"}})
     if "slow" in prompt:
         time.sleep(1.5)
     if "hang" in prompt:
-        time.sleep(60)
+        while True:
+            d = ler()
+            if d is None:
+                sys.exit(5)
+            interrompido(d)
     reply = "echo: " + prompt.strip().splitlines()[0]
+    if prompt.startswith("ask tool"):
+        r = pede("Bash", {{"command": "ls /"}}, "r1")
+        reply = "tool " + r["behavior"] + (": " + r["message"] if r.get("message") else "")
+    elif prompt.startswith("ask question"):
+        r = pede("AskUserQuestion", {{"questions": [{{"question": "Pick a color?", "header": "Color",
+                 "options": [{{"label": "Red", "description": "warm"}}, {{"label": "Blue", "description": "cool"}}],
+                 "multiSelect": False}}]}}, "r2")
+        reply = ("answers " + json.dumps(r["updatedInput"]["answers"])) if r["behavior"] == "allow" else "no answer"
+    elif prompt.startswith("ask plan"):
+        r = pede("ExitPlanMode", {{"plan": "# Plan\\n\\n1. Do it"}}, "r3")
+        reply = "plan " + r["behavior"] + " " + json.dumps(r.get("updatedPermissions") or [])
+    elif prompt.startswith("ask edit "):
+        alvo = prompt.split(" ", 2)[2].strip()
+        e = {{"file_path": alvo, "old_string": "beta", "new_string": "BETA"}}
+        out({{"type": "assistant", "message": {{"id": "m0", "content": [{{"type": "tool_use", "id": "tu1",
+             "name": "Edit", "input": e}}]}}}})
+        r = pede("Edit", e, "r4")
+        if r["behavior"] == "allow":
+            with open(alvo) as f:
+                orig = f.read()
+            with open(alvo, "w") as f:
+                f.write(orig.replace("beta", "BETA", 1))
+            out({{"type": "user", "message": {{"content": [{{"type": "tool_result", "tool_use_id": "tu1",
+                 "content": "The file has been updated."}}]}}, "tool_use_result": {{"filePath": alvo,
+                 "oldString": "beta", "newString": "BETA", "originalFile": orig, "structuredPatch": [
+                 {{"oldStart": 1, "oldLines": 3, "newStart": 1, "newLines": 3,
+                   "lines": [" alpha", "-beta", "+BETA", " gamma"]}}]}}}})
+            reply = "edited"
+        else:
+            out({{"type": "user", "message": {{"content": [{{"type": "tool_result", "tool_use_id": "tu1",
+                 "content": r.get("message", ""), "is_error": True}}]}}}})
+            reply = "edit denied"
     out({{"type": "stream_event", "event": {{"type": "content_block_delta",
          "delta": {{"type": "text_delta", "text": reply}}}}}})
-    out({{"type": "assistant", "message": {{"id": "msg1", "content": [{{"type": "text", "text": reply}}],
-         "usage": {{"input_tokens": 7, "output_tokens": 3}}}}}})
+    out({{"type": "assistant", "uuid": "uuid-" + str(n), "message": {{"id": "msg1",
+         "content": [{{"type": "text", "text": reply}}], "usage": {{"input_tokens": 7, "output_tokens": 3}}}}}})
     out({{"type": "result", "usage": {{"input_tokens": 7, "output_tokens": 3}}, "total_cost_usd": 0.001,
          "num_turns": 1, "session_id": "{SID}"}})
+    ate_fechar()  # like the real CLI, which exits once its stdin closes
 """)
 
 
@@ -143,6 +218,30 @@ class Servidor:
             time.sleep(0.1)
         raise AssertionError("the reply never ended")
 
+    def espera_pedido(self, cid, limite=15):
+        """Follow the event stream until the run asks for something, and return that request."""
+        c = http.client.HTTPConnection("127.0.0.1", self.porta, timeout=limite)
+        fim = time.time() + limite
+        try:
+            c.request("GET", f"/api/chats/{cid}/eventos?desde=0", headers={"X-Token": self.token})
+            r = c.getresponse()
+            for linha in r:
+                if time.time() > fim:
+                    break
+                if linha.startswith(b"data: "):
+                    ev = json.loads(linha[6:])
+                    if ev["t"] == "pedido" and ev["estado"] == "pendente":
+                        return ev
+                    if ev["t"] == "fim":
+                        raise AssertionError("the run ended without a request")
+            raise AssertionError("no request")
+        finally:
+            c.close()
+
+    def stdin_claude(self):
+        p = self.home / "claude-stdin.jsonl"
+        return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
+
     def args_claude(self):
         p = self.home / "claude-args.jsonl"
         return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
@@ -228,6 +327,13 @@ class TestServidor(unittest.TestCase):
         self.assertEqual(resp["texto"], "echo: hello there")
         self.assertEqual(resp["uso"]["entrada"], 7)
         self.assertEqual(chat["totais"]["total"], 10)
+        self.assertTrue(resp["uuid"].startswith("uuid-"))
+        # the prompt goes in as a stream-json user message, with permission requests on stdio
+        args = self.s.args_claude()[-1]
+        self.assertEqual(args[args.index("--input-format") + 1], "stream-json")
+        self.assertEqual(args[args.index("--permission-prompt-tool") + 1], "stdio")
+        self.assertIn({"type": "user", "message": {"role": "user", "content": "hello there"},
+                       "parent_tool_use_id": None, "session_id": ""}, self.s.stdin_claude())
         # the second message resumes the CLI session
         self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "again"})
         self.s.espera_parado(c["id"])
@@ -257,7 +363,10 @@ class TestServidor(unittest.TestCase):
         time.sleep(0.5)
         self.s.api(f"/api/chats/{c['id']}/parar", {})
         chat = self.s.espera_parado(c["id"], 15)
-        self.assertIn("(stopped)", chat["mensagens"][-1]["erro"])
+        self.assertEqual(chat["mensagens"][-1]["erro"], "(stopped)")
+        # a clean interrupt on stdin, not a kill
+        self.assertTrue(any(d.get("type") == "control_request" and d["request"]["subtype"] == "interrupt"
+                            for d in self.s.stdin_claude()))
 
     def test_mensagem_vazia(self):
         c = self.novo_chat()
@@ -291,6 +400,142 @@ class TestServidor(unittest.TestCase):
         self.assertEqual(r["apagados"], 2)
         self.s.api(f"/api/chats/{c['id']}", esperado=400)
         self.s.api("/api/chats/apagar", {"ids": ["../../etc"]}, esperado=400)
+
+    # ---------------------------------------------------------------- approvals, questions, plans
+    def respostas_ctl(self):
+        return {d["response"]["request_id"]: d["response"]["response"] for d in self.s.stdin_claude()
+                if d.get("type") == "control_response"}
+
+    def test_aprovar_negar_e_sempre(self):
+        c = self.novo_chat(perm="manual")
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "ask tool"})
+        p = self.s.espera_pedido(c["id"])
+        self.assertEqual((p["tipo"], p["ferramenta"], p["entrada"]), ("ferramenta", "Bash", {"command": "ls /"}))
+        self.assertTrue(any(x["id"] == p["id"] for x in self.s.api("/api/estado")["pedidos"]))
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "negar", "motivo": "not   now"})
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "aprovar"}, esperado=400)  # answered already
+        chat = self.s.espera_parado(c["id"])
+        m = chat["mensagens"][-1]
+        self.assertEqual(m["texto"], "tool deny: The user denied this in the web interface and said: not now")
+        self.assertEqual((m["pedidos"][0]["estado"], m["pedidos"][0]["motivo"]), ("negado", "not now"))
+        # allow, and remember it for this chat
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "ask tool"})
+        p = self.s.espera_pedido(c["id"])
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "sempre"})
+        chat = self.s.espera_parado(c["id"])
+        self.assertEqual(chat["mensagens"][-1]["texto"], "tool allow")
+        self.assertEqual(chat["permitidos"], ["Bash"])
+        # now Bash goes through without a card
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "ask tool"})
+        chat = self.s.espera_parado(c["id"])
+        self.assertEqual(chat["mensagens"][-1]["texto"], "tool allow")
+        self.assertNotIn("pedidos", chat["mensagens"][-1])
+        r = self.s.api(f"/api/chats/{c['id']}/permitidos", {})
+        self.assertEqual(r["permitidos"], [])
+
+    def test_pergunta(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "ask question"})
+        p = self.s.espera_pedido(c["id"])
+        self.assertEqual(p["tipo"], "pergunta")
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "responder", "respostas": {"Other?": "x"}}, esperado=400)
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "responder", "respostas": {"Pick a color?": "Blue\nish"}})
+        chat = self.s.espera_parado(c["id"])
+        self.assertEqual(chat["mensagens"][-1]["texto"], 'answers {"Pick a color?": "Blue ish"}')
+        self.assertEqual(chat["mensagens"][-1]["pedidos"][0]["estado"], "respondido")
+
+    def test_plano(self):
+        c = self.novo_chat(perm="plan")
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "ask plan"})
+        p = self.s.espera_pedido(c["id"])
+        self.assertEqual((p["tipo"], p["entrada"]["plan"]), ("plano", "# Plan\n\n1. Do it"))
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "aprovar", "modo": "acceptEdits"})
+        chat = self.s.espera_parado(c["id"])
+        self.assertEqual(chat["mensagens"][-1]["texto"],
+                         'plan allow [{"type": "setMode", "mode": "acceptEdits", "destination": "session"}]')
+        self.assertEqual(chat["perm"], "acceptEdits")  # out of plan mode, like the terminal
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "next"})
+        self.s.espera_parado(c["id"])
+        args = self.s.args_claude()[-1]
+        self.assertEqual(args[args.index("--permission-mode") + 1], "acceptEdits")
+
+    def test_edicao_mostra_diff(self):
+        alvo = self.s.home / "edit-me.txt"
+        alvo.write_text("alpha\nbeta\ngamma\n")
+        c = self.novo_chat(perm="manual")
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": f"ask edit {alvo}"})
+        p = self.s.espera_pedido(c["id"])
+        self.assertEqual(p["patch"]["arquivo"], str(alvo))
+        linhas = p["patch"]["hunks"][0]["linhas"]
+        self.assertIn("-beta", linhas)
+        self.assertIn("+BETA", linhas)
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "aprovar"})
+        chat = self.s.espera_parado(c["id"])
+        f = chat["mensagens"][-1]["ferramentas"][0]
+        self.assertEqual(f["patch"]["hunks"][0]["linhas"], [" alpha", "-beta", "+BETA", " gamma"])
+        self.assertEqual(alvo.read_text(), "alpha\nBETA\ngamma\n")
+
+    def test_parar_com_pedido_aberto_cancela(self):
+        c = self.novo_chat(perm="manual")
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "ask tool"})
+        p = self.s.espera_pedido(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/parar", {})
+        chat = self.s.espera_parado(c["id"], 15)
+        self.assertEqual(chat["mensagens"][-1]["pedidos"][0]["estado"], "cancelado")
+        self.s.api("/api/pedido", {"id": p["id"], "acao": "aprovar"}, esperado=400)
+
+    # ---------------------------------------------------------------- edit, retry, fork
+    def test_reenviar_e_bifurcar(self):
+        c = self.novo_chat()
+        for t in ("first", "second"):
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": t})
+            chat = self.s.espera_parado(c["id"])
+        u1 = chat["mensagens"][1]["uuid"]
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 1}, esperado=400)  # not a user message
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 2, "texto": "second, edited"})
+        chat = self.s.espera_parado(c["id"])
+        args = self.s.args_claude()[-1]
+        self.assertEqual(args[args.index("--resume-session-at") + 1], u1)
+        self.assertIn("--fork-session", args)
+        self.assertEqual([m["texto"] for m in chat["mensagens"]],
+                         ["first", "echo: first", "second, edited", "echo: second, edited"])
+        self.assertNotIn("fork", chat)
+        self.assertIn(SID, chat["antigas"])
+        # after the branch, the chat simply resumes its new session
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "third"})
+        self.s.espera_parado(c["id"])
+        self.assertNotIn("--fork-session", self.s.args_claude()[-1])
+        # retry the first message: a fresh session
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 0, "texto": None})
+        chat = self.s.espera_parado(c["id"])
+        self.assertNotIn("--resume", self.s.args_claude()[-1])
+        self.assertEqual([m["texto"] for m in chat["mensagens"]], ["first", "echo: first"])
+        # fork from a reply into a new chat
+        n = self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 1})
+        self.assertNotEqual(n["id"], c["id"])
+        self.assertTrue(n["titulo"].startswith("Fork of"))
+        self.assertEqual(len(n["mensagens"]), 2)
+        self.s.api(f"/api/chats/{n['id']}/enviar", {"texto": "in the fork"})
+        self.s.espera_parado(n["id"])
+        args = self.s.args_claude()[-1]
+        self.assertEqual(args[args.index("--resume-session-at") + 1], chat["mensagens"][1]["uuid"])
+        self.assertIn("--fork-session", args)
+        self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 0}, esperado=400)
+
+    # ---------------------------------------------------------------- app
+    def test_manifesto_e_icones(self):
+        st, b, cab = self.s.pedir("GET", "/manifest.webmanifest")
+        self.assertEqual(st, 200)
+        m = json.loads(b)
+        self.assertEqual((m["name"], m["display"], m["start_url"]), ("Agents", "standalone", "/"))
+        for nome, ini in (("/icon-192.png", b"\x89PNG"), ("/icon-512.png", b"\x89PNG"), ("/icon.svg", b"<")):
+            st, b, _ = self.s.pedir("GET", nome)
+            self.assertEqual((st, b[:len(ini)]), (200, ini), nome)
+
+    def test_atualizar_fora_da_instalacao(self):
+        # a checkout is not an installed copy, so it never updates itself
+        r = self.s.pedir("POST", "/api/atualizar", {}, {"X-Token": self.s.token})
+        self.assertEqual(r[0], 400)
 
     # ---------------------------------------------------------------- files
     def test_pastas(self):

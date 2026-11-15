@@ -127,6 +127,8 @@ do_install() {
     install -m 755 "$SRC/src/bin/pkexec" "$APP/bin/pkexec"
     install -m 755 "$SRC/install.sh" "$APP/install.sh"
     install -m 755 "$tray" "$APP/agents-web-tray"
+    install -m 644 "$SRC/data/agents-web.svg" "$SRC/data/icon-192.png" "$SRC/data/icon-512.png" "$APP/"
+    echo "$SOURCE" > "$APP/source"   # where Settings looks for updates
     rm -f "$tray"
     rm -rf "$APP/__pycache__"
     install -m 755 "$SRC/src/agents-web" "$BIN/agents-web"

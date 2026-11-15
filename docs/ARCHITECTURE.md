@@ -9,8 +9,8 @@ official `claude` or `agy` binary, started in print mode for each message.
         v
  server.py  (Python standard library, one process)
         |  starts one CLI process per reply, reads its JSON stream
-        v
- claude -p --output-format stream-json ...     agy --output-format stream-json -p ...
+        v      (and answers Claude's permission requests on its stdin)
+ claude -p --input-format stream-json ...      agy --output-format stream-json -p ...
         |                                             |
    ~/.claude (or an extra CLAUDE_CONFIG_DIR)     ~/.gemini/antigravity-cli
 
@@ -46,8 +46,11 @@ answers only loopback and the local networks (see [SECURITY.md](SECURITY.md)).
 Every message starts a run.
 
 1. The prompt (plus the paths of any uploaded files) goes to a new CLI process.
-   - Claude: `claude -p --output-format stream-json --verbose --include-partial-messages` with `--model`,
-     `--permission-mode`, `--effort` and `--resume <session>` when set, and the prompt on stdin.
+   - Claude: `claude -p --input-format stream-json --output-format stream-json --verbose
+     --include-partial-messages --permission-prompt-tool stdio` with `--model`, `--permission-mode`,
+     `--effort` and `--resume <session>` when set. The prompt goes in as a stream-json user message, and stdin
+     stays open for the answers to permission requests (see Approvals). It is closed when the result arrives,
+     and the CLI exits.
    - Antigravity: `agy --output-format stream-json` with `--model`, `--mode` or
      `--dangerously-skip-permissions` and `--conversation <id>` when set, and `-p <prompt>`.
 2. The process runs under `setpriv --pdeathsig KILL`, so an agent never outlives the server.
@@ -60,6 +63,35 @@ Every message starts a run.
 The CLI session id from the first reply is stored in the chat, so the next message resumes the same
 conversation and keeps the agent's context. The same session can be opened later in a terminal with
 `claude --resume <id>`.
+
+### Approvals, questions and plans
+
+With `--permission-prompt-tool stdio`, whenever Claude Code would show a prompt in a terminal it writes a
+`control_request` (`subtype: can_use_tool`, with the tool name and input) and waits.
+
+1. If the chat always allows that tool (`permitidos` in the chat file), the server answers `allow` at once.
+2. Otherwise the request becomes a card, an event of type `pedido` with `tipo` `ferramenta` (a tool),
+   `pergunta` (AskUserQuestion) or `plano` (ExitPlanMode). For Edit and Write the server computes the diff
+   against the file on disk, so the card shows real line numbers.
+3. `POST /api/pedido` answers it. The server writes a `control_response` with `behavior: allow` (for a
+   question, the input plus `answers`) or `behavior: deny` with a message that includes your note.
+   Approving a plan with edits accepted adds a `setMode acceptEdits` permission update, and the chat leaves
+   plan mode, as it does in the terminal.
+4. When the run ends, requests still open are marked cancelled.
+
+Stop sends a `control_request` of subtype `interrupt`. The CLI ends the turn and reports it, and a kill
+follows only if it does not exit within 4 seconds. Antigravity runs have no such channel, so they are
+stopped with a signal as before.
+
+### Edit, retry and fork
+
+Each saved Claude reply keeps the `uuid` of its last assistant message that has text and no pending tool
+call. Editing or retrying message `n` starts the next run with `--resume <session> --resume-session-at <uuid
+of reply n-1> --fork-session`. The CLI makes a new session that contains the conversation up to that reply,
+and the original session file stays as it was. The page keeps only the messages before `n`, and the old
+session id is remembered (`antigas`) so it is not listed again as a terminal session. Retrying the first
+message simply starts a new session. Fork does the same in a new chat file, and the original chat is not
+touched.
 
 ### Terminal sessions
 
@@ -108,12 +140,14 @@ hidden folder gets a link for that one file only.
 | `~/.local/share/agents-web/previews/` | the source of rendered html previews |
 | `~/.local/share/agents-web/limites.json`, `uso.json` | usage caches |
 | `~/.local/share/agents-web/server.log` | stdout and stderr of the server, written by the tray (`server.log.1`: the run before) |
+| `~/.local/share/agents-web/update.log` | output of updates started from the page |
 
 Writes go to a temporary file (one per writer) followed by a rename, so a crash never leaves half a JSON
 file and two threads saving the same file never mix their bytes.
 
 These paths do not follow `XDG_CONFIG_HOME` or `XDG_DATA_HOME`. The installer only uses those for the menu
-entry and the icon.
+entry and the icon. `AGENTS_WEB_CONFIG_DIR` and `AGENTS_WEB_DATA_DIR` replace the two folders, for a second
+instance.
 
 ## HTTP API
 
@@ -132,6 +166,9 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/config` | POST | rename, change model, effort, permission mode, account or folder |
 | `chats/<id>/fila` | POST | edit, reorder or clear queued messages |
 | `chats/<id>/duplicar` | POST | copy a chat |
+| `chats/<id>/reenviar` | POST | edit or retry message `indice` (`texto`, or `null` to resend it as it was) |
+| `chats/<id>/bifurcar` | POST | a new chat that continues from reply `indice` |
+| `chats/<id>/permitidos` | POST | forget the always allowed tools (`tirar`: one name, or all) |
 | `chats/<id>/apagar`, `chats/apagar` | POST | delete one or several chats, optionally with their files and CLI sessions |
 | `fixar` | POST | pin or unpin a chat |
 | `busca` | GET | full text search over chats and terminal sessions |
@@ -144,20 +181,34 @@ that way. They are stable identifiers, not text shown to users.
 | `contas/status`, `contas/login`, `contas/nova`, `contas/editar` | GET, POST | accounts |
 | `cli/sessoes`, `cli/lista`, `cli/renomear`, `cli/apagar`, `cli/importar` | GET, POST | terminal sessions |
 | `preferencias` | POST | default settings |
-| `pedido` | POST | answer a root request (approve with a password, or deny) |
+| `pedido` | POST | answer a card: a root request (password or deny), a tool (`aprovar`, `sempre`, `negar` with `motivo`), a question (`responder` with `respostas`) or a plan (`aprovar` with `modo`, or `negar`) |
+| `atualizacao?forcar=1`, `atualizar` | GET, POST | check the latest release, install it |
 | `celular/pin`, `celular/passe`, `celular/dispositivos`, `celular/revogar` | GET, POST | phone pairing |
 | `assinar` | POST | turn absolute file paths from a reply into signed `/f/` links |
 
-Other routes are `/` (the page), `/sw.js` (service worker for notifications), `/ca.crt` (the local CA),
+Other routes are `/` (the page), `/sw.js` (service worker for notifications), `/manifest.webmanifest` and the
+icons (`/icon.svg`, `/icon-192.png`, `/icon-512.png`), `/ca.crt` (the local CA),
 `/f/<signature>/<path>` (inline files) and `/saude` (health check, loopback only). The event stream may
 take the token as `?t=`, because `EventSource` cannot send headers.
 
 ## Tests
 
 `tests/test_server.py` starts `server.py` in a temporary `HOME` with a fake `claude` that speaks stream-json.
-It covers the access rules (token, `Host` check, https on the same port, the CA name constraints), a full
-reply with `--resume`, the queue, stop, search, delete, uploads, signed `/f/` links (folder scope, hidden
-folders, `..`, ranges) and the preview sandbox.
+The fake reads its stdin like the real CLI and can ask for a permission, a question or a plan. The tests cover the
+access rules (token, `Host` check, https on the same port, the CA name constraints), a full reply with
+`--resume`, the queue, stop by interrupt, approvals (allow, deny with a note, always allow), questions, plans,
+diffs, edit, retry and fork, search, delete, uploads, signed `/f/` links (folder scope, hidden folders, `..`,
+ranges), the preview sandbox, the manifest and icons.
+
+## Updates
+
+Settings, Updates, calls `api.github.com/repos/gabrielmf1998/Agents-Web/releases/latest` (or the GitLab
+`releases/permalink/latest` endpoint when `~/.local/opt/agents-web/source` says `gitlab`) only when you
+click, and compares the tag with the running version. **Update now** is offered only for a copy installed
+by `install.sh` and only when no reply is running. It starts the same `curl … install.sh | bash -s --
+--no-deps` as `agents-web update` in a session of its own, because the installer stops the tray and with it
+the whole process group of the server. The output goes to `update.log`, and the page reloads when the
+server reports the new version.
 
 ## Root approvals
 

@@ -47,10 +47,13 @@ password for a root request is only accepted over https or from the PC itself.
 
 ## Agents and permissions
 
-New chats run with full access (`bypassPermissions` for Claude, `--dangerously-skip-permissions` for agy),
-because print mode cannot ask you about each tool. This is the same as running those flags in a terminal.
-Choose "Accept edits", "Auto" or "Plan only" per chat if you want less. The agents run as your user, in
-the folder you pick, with your normal environment.
+New chats run with full access (`bypassPermissions` for Claude, `--dangerously-skip-permissions` for agy).
+This is the same as running those flags in a terminal. For Claude you can choose "Ask before each action",
+"Accept edits, ask for the rest" or "Plan first, then approve" per chat, and every prompt becomes a card in
+the page. Anyone who can use the page can also answer those cards, so the same rules as above apply.
+"Always allow <tool> here" is stored in that chat only and can be undone from the chat header. Antigravity
+has no prompts in print mode, so its modes act without asking. The agents run as your user, in the folder
+you pick, with your normal environment.
 
 ## Root approvals
 
@@ -58,7 +61,8 @@ When an agent calls `pkexec`, the request appears in the chat with the exact com
 your password once to a `pkttyagent` that serves only that `pkexec` process, and polkit checks it as it
 always does. Details:
 
-- The relay socket is `$XDG_RUNTIME_DIR/agents-web-pk.sock`, mode 600. The server accepts only peers that
+- The relay socket is `$XDG_RUNTIME_DIR/agents-web-pk.sock` (`agents-web-pk-<port>.sock` for an instance on
+  another port), mode 600. The server accepts only peers that
   run as the same user (`SO_PEERCRED`) and present the token of a reply that is still running.
 - The password is held in memory only while it is handed over. It is never written to disk or to a log.
 - Requests nobody answers are denied after 10 minutes, and a request whose `pkexec` exits is cancelled.
@@ -73,8 +77,10 @@ always does. Details:
   folders below it, never hidden ones, and never your whole home folder. It works without the token, so
   treat a copied link like the file itself.
 - Agents Web itself connects only to `api.anthropic.com/api/oauth/usage` (Claude usage limits, with the
-  account's own OAuth token). The CLIs make their own connections as usual. There is no telemetry and no
-  update check. `agents-web update` downloads only when you run it.
+  account's own OAuth token) and, when you click "Check for updates", to the GitHub or GitLab releases API.
+  The CLIs make their own connections as usual. There is no telemetry and no automatic update check.
+  "Update now" and `agents-web update` download the installer from the same repository, over https, only
+  when you ask.
 
 ## Reporting a problem
 

@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.4.0 (2026-11-15)
+
+New
+
+- **Approvals in the page (Claude).** Claude chats now talk to the CLI over stdio, so a permission prompt
+  becomes a card in the chat instead of a silent denial. Allow, deny with a note for Claude, or "Always allow
+  <tool> here" for the rest of that chat. The header shows the tools a chat always allows, and one click makes
+  Claude ask again.
+- **Questions and plans.** When Claude asks a question (AskUserQuestion), the card shows its options and a
+  field for your own answer. In "Plan first, then approve" mode the plan is shown in full, and you approve it
+  with edits accepted automatically or with Claude asking before each change, or send it back with a note.
+- **Diffs.** Edits and new files show a colored diff with line numbers, both on the approval card and in the
+  finished tool call, with a +/− count in the tool summary.
+- **Edit, retry and fork (Claude).** Edit a message you sent or send it again, and the reply below it is
+  replaced. Fork any reply into a new chat that continues from there. The original conversation stays in
+  Claude Code untouched, because each of these branches the CLI session (`--resume-session-at`,
+  `--fork-session`).
+- **Export as Markdown** from the chat menu in the sidebar.
+- **Updates from the page.** Settings, Updates, checks GitHub (or GitLab, for installs from the mirror) when you
+  click, shows the release notes and installs the new version. The page reloads by itself.
+- **Installable app.** A web app manifest and icons, so "Add to home screen" and "Install app" give a proper
+  icon and a window of its own.
+- Stop is now a clean interrupt of the CLI, with a kill only if it does not answer within 4 seconds.
+- `AGENTS_WEB_CONFIG_DIR` and `AGENTS_WEB_DATA_DIR` run a second, separate instance (for tests, or to try a
+  version).
+
+Changes
+
+- The permission modes have clearer names. "Manual" is now "Ask before each action" and works, because
+  prompts reach the page.
+- The root relay socket of an instance on another port is `agents-web-pk-<port>.sock`, so a second instance
+  never touches the socket of the main one.
+- `agents-web update` uses the GitLab installer when the app was installed from GitLab.
+
+Notes
+
+- Edit, retry and fork work on replies made with 1.4.0 or later. Older messages do not have the reference
+  the CLI needs to branch.
+- Antigravity chats keep their permission modes as before. The agy CLI has no stdio prompt in print mode.
+
 ## 1.3.1 (2026-11-15)
 
 Fixes

@@ -19,8 +19,11 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 - **Terminal conversations.** Your existing `claude` and `agy` sessions show up in the sidebar. You can open, continue, rename or delete them, and a Claude chat can move to another working folder.
 - **Rich replies.** Markdown with tables, live previews of `html` and `svg` blocks in a sandboxed frame that follows the page theme, and inline images, videos, audio and PDFs for absolute file paths the agent mentions.
 - **Phone friendly.** Pair a phone with a 6 digit PIN or a QR code. You get https on the same port with a private local CA, voice dictation and notifications when a reply is ready.
+- **Approvals, questions and plans (Claude).** Permission prompts, questions from Claude and plans to approve show up as cards in the chat, with a diff for every edit.
+- **Edit, retry and fork (Claude).** Change a message you sent and get a new reply, or fork any reply into a new chat. The original conversation stays in Claude Code.
 - **Root approvals in the browser.** When an agent runs `pkexec`, a card shows the command and you approve it with your password (https or the PC only) or deny it.
-- **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, a draft kept per chat, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
+- **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, a draft kept per chat, export as Markdown, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
+- **Updates from the page.** Settings checks for a new release when you click and installs it. The page can also be installed as an app.
 - **No dependencies.** The server uses only the Python standard library, the page needs no build step or CDN, and the tray uses under 4 MB of RAM.
 
 ## Requirements
@@ -96,14 +99,38 @@ account of the `agy` CLI.
 ### Permissions
 
 New chats start in **Full access** (`--permission-mode bypassPermissions` for Claude, `--dangerously-skip-permissions`
-for agy), because nobody can answer a permission prompt in print mode. Pick another mode per chat from the
-permission chip if you prefer: Accept edits, Auto or Plan only. Only run agents in folders you trust.
+for agy). Pick another mode per chat from the permission chip.
+
+| Claude mode | What happens |
+|---|---|
+| Full access | everything runs without asking |
+| Accept edits, ask for the rest | file edits and basic file commands such as `touch` in the working folder run, other commands show a card |
+| Ask before each action | reading files and read only commands such as `echo` run, anything else shows a card first |
+| Plan first, then approve | Claude explores and writes a plan, you approve it (then edits are accepted, or Claude asks before each change) or send it back |
+| Auto | Claude Code decides on its own which actions to allow |
+| Don't ask (deny) | anything not already allowed is refused without a card |
+
+A card shows the command, the URL or a diff of the edit. **Allow**, **Deny** (with an optional note that Claude
+reads) or **Always allow <tool> here**, which stops the questions for that tool in that chat. The header lists
+those tools, and clicking the list makes Claude ask again. Questions from Claude (multiple choice or your own
+words) appear the same way, in every mode. You get a notification when the page is in the background.
+
+Antigravity has no prompts in print mode, so its modes (Full access, Accept edits, Auto, Plan) act alone. Only
+run agents in folders you trust.
+
+### Edit, retry and fork
+
+Hover a message you sent (on phones the buttons are always visible): **Edit** changes it and gets a new reply,
+**Retry** sends it again. Under a reply, **Fork** opens a new chat that continues from that point. The chat
+in the page moves to the new branch, and the original conversation stays in Claude Code, where
+`claude --resume` still finds it. These work for Claude chats, on messages from version 1.4.0 on.
 
 ### Settings
 
 Settings covers animations, the alert when a reply is ready (chime, vibration and notification), the dictation language,
-**Rich replies** (a short hint that tells agents about the previews, about 250 tokens) and
-**Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog).
+**Rich replies** (a short hint that tells agents about the previews, about 250 tokens),
+**Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog) and
+**Updates** (see below).
 
 ### Keyboard
 
@@ -125,7 +152,19 @@ The default port is 47830. To change it, set `AGENTS_WEB_PORT` in your session e
 AGENTS_WEB_PORT=48000
 ```
 
+`AGENTS_WEB_CONFIG_DIR` and `AGENTS_WEB_DATA_DIR` move the settings and the chats to other folders. Together
+with another port they run a second instance that shares nothing with the main one, for example to try a
+version from a checkout:
+
+```bash
+AGENTS_WEB_PORT=47950 AGENTS_WEB_CONFIG_DIR=/tmp/aw/cfg AGENTS_WEB_DATA_DIR=/tmp/aw/data python3 src/server.py
+```
+
 ## Update and uninstall
+
+In the page, open Settings and click **Check for updates**. If there is a new release you see its notes and an
+**Update now** button. The service restarts and the page reloads by itself. Nothing is checked unless you
+click. From a terminal:
 
 ```bash
 agents-web update                         # latest release

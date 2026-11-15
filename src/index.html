@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1a1917">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>Agents</title>
 <style>
 :root{--bg:#000;--p1:rgba(10,10,10,.94);--p2:#121212;--p3:#1b1b1b;--bd:#232323;--bd2:#353535;--tx:#ececec;--mu:#8d8d8d;--mu2:#5f5f5f;--ac:#fff;--acs:#fff;--actx:#000;--tint:rgba(255,255,255,.08);--ok:#6fd38a;--er:#ff7b7b;--am:#e8c66a;--mono:ui-monospace,"JetBrains Mono","Cascadia Code","DejaVu Sans Mono",monospace;--ui:Inter,"Segoe UI",system-ui,-apple-system,sans-serif;--resp:var(--ui);--raio:10px}
@@ -272,6 +275,40 @@ body[data-tema=claude] .m.a .corpo{font-size:15.5px;line-height:1.7}
 .pk.fim{padding:7px 12px;background:transparent;border-color:var(--bd);display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--mu);flex-wrap:wrap}
 .pk.fim .cmd{display:inline;margin:0;padding:1px 6px;border:0}.pk.fim.ok{border-color:rgba(111,211,138,.35)}.pk.fim.ruim{border-color:rgba(255,123,123,.3)}
 .pk-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--am);margin-right:6px;vertical-align:1px;box-shadow:0 0 0 3px rgba(232,198,106,.18)}
+.pk.ask{border-color:color-mix(in srgb,var(--acs) 45%,transparent);background:color-mix(in srgb,var(--acs) 6%,transparent)}
+.pk.ask>.t{color:var(--acs)}
+.pk .desc{font-size:13px;margin-top:4px}
+.pk .json{font:12px var(--mono);background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin:8px 0;white-space:pre-wrap;word-break:break-all;max-height:240px;overflow:auto}
+.pk .q{margin:10px 0 4px}.pk .q .hd{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mu)}
+.pk .q .qt{font-weight:600;margin:3px 0 8px;font-size:14px}
+.pk .ops{display:grid;gap:6px}
+.pk .op{display:block;width:100%;text-align:left;border:1px solid var(--bd);background:var(--p2);border-radius:9px;padding:8px 11px;color:var(--tx);cursor:pointer;font:inherit;font-size:13px}
+.pk .op small{margin-top:2px}.pk .op:hover{border-color:var(--bd2)}.pk .op.on{border-color:var(--acs);background:var(--tint)}
+.pk .plano{max-height:380px;overflow:auto;background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:2px 14px;margin:8px 0;font-size:13.5px}
+.pk.fim details{width:100%}.pk.fim summary{cursor:pointer}.pk.fim .resp{color:var(--tx)}
+.diff{border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin:8px 0;background:var(--p2)}
+.diff .dcab{display:flex;gap:8px;align-items:center;padding:6px 10px;font:12px var(--mono);color:var(--mu);border-bottom:1px solid var(--bd)}
+.diff .dcab span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}
+.diff .dcab em{font-style:normal;font-size:11px;color:var(--ok)}
+.dmais{color:var(--ok);font-weight:600}.dmenos{color:var(--er);font-weight:600}
+.dstat{font:11px var(--mono);flex:none}
+.dcorpo{max-height:420px;overflow:auto;font:12px/1.5 var(--mono)}
+.dl{display:grid;grid-template-columns:4.5ch 4.5ch 2ch 1fr;min-width:max-content}
+.dl .n{padding:0 6px 0 0;text-align:right;color:var(--mu2);user-select:none}
+.dl .s{text-align:center;user-select:none;color:var(--mu2)}
+.dl .c{white-space:pre;padding-right:12px}
+.dl.add{background:rgba(111,211,138,.13)}.dl.add .s{color:var(--ok)}
+.dl.del{background:rgba(255,123,123,.13)}.dl.del .s{color:var(--er)}
+.dsep{padding:2px 10px;color:var(--mu2);background:var(--p3);font-size:11px}
+.acoes-m{display:flex;gap:2px;margin-top:3px;opacity:0;transition:opacity .15s}
+.m.u:hover .acoes-m,.m.u:focus-within .acoes-m{opacity:1}
+@media (hover:none){.acoes-m{opacity:.75}}
+.acoes-m .btn,.meta .btn.txt{height:24px;width:auto;padding:0 8px;font-size:11.5px;gap:5px;color:var(--mu)}
+.m.u .editor{width:min(620px,100%);display:flex;flex-direction:column;gap:8px}
+.m.u .editor textarea{width:100%;min-height:90px;resize:vertical;background:var(--p2);color:var(--tx);border:1px solid var(--acs);border-radius:var(--raio);padding:10px 14px;font:inherit;font-size:14px}
+.m.u .editor .f{display:flex;gap:8px;justify-content:flex-end;align-items:center}.m.u .editor small{color:var(--mu);font-size:11.5px;flex:1}
+.btn.forget{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.notas{margin:8px 0;border:1px solid var(--bd);border-radius:10px;padding:6px 12px;background:var(--p2)}details.notas summary{cursor:pointer;font-size:13px}
 details.tool{border:1px solid var(--bd);border-radius:10px;background:var(--p1);overflow:hidden}
 details.tool.novo{animation:surge .3s ease-out}
 details.tool summary{display:flex;align-items:center;gap:9px;padding:7px 10px;cursor:pointer;list-style:none;min-width:0}
@@ -572,7 +609,7 @@ const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const plural=(n,s)=>`${n} ${s}${n===1?"":"s"}`;
 
 /* ---------- icons ---------- */
-const P={pin:"M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",plus:"M12 5v14M5 12h14",search:"M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-3.6-3.6",users:"M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7",
+const P={branch:"M6 3v12M18 9a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",download:"M12 3v12M7 10l5 5l5-5M5 21h14",help:"M12 22a10 10 0 1 0 0-20a10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01",lista:"M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",pin:"M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",plus:"M12 5v14M5 12h14",search:"M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-3.6-3.6",users:"M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7",
  import:"M12 4v11M7.5 10.5L12 15l4.5-4.5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2",phone:"M8 3h8a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 16 21H8a1.5 1.5 0 0 1-1.5-1.5v-15A1.5 1.5 0 0 1 8 3zM11 18h2",
  sparkles:"M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",folder:"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",mais:"M5 12h.01M12 12h.01M19 12h.01",
  copy:"M9 9h10v10H9zM5 15V5h10",trash:"M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",stop:"M7 7h10v10H7z",send:"M12 19V5M5.5 11.5L12 5l6.5 6.5",
@@ -760,7 +797,7 @@ document.addEventListener("click",e=>{const b=e.target.closest(".cp");if(b)copia
 
 /* ---------- state ---------- */
 let EST={contas:[],chats:[],limites:{}},CHAT=null,FILTRO="",ES=null,VIVO=null,PEND=[],MODELOS={claude:[],agy:[]},USO=null,SEL=null;
-const PERMS={claude:[["bypassPermissions","Full access"],["acceptEdits","Accept edits"],["auto","Auto"],["dontAsk","Don't ask (deny)"],["plan","Plan only"],["manual","Manual (denies in print mode)"]],
+const PERMS={claude:[["bypassPermissions","Full access"],["acceptEdits","Accept edits, ask for the rest"],["manual","Ask before each action"],["plan","Plan first, then approve"],["auto","Auto"],["dontAsk","Don't ask (deny)"]],
  agy:[["skip","Full access"],["accept-edits","Accept edits"],["auto","Auto"],["plan","Plan only"],["","Default (may hang)"]]};
 const EFFORT=[["","Default effort"],["low","Low"],["medium","Medium"],["high","High"],["xhigh","Extra high"],["max","Max"]];
 const NOMEAG={claude:"Claude Code",agy:"Antigravity"},CURTO={claude:"Claude",agy:"Antigravity"};
@@ -831,7 +868,7 @@ function desenharLista(){
   const marcado=SEL&&SEL.has(c.id);
   const it=el("div",{class:"item"+(CHAT&&CHAT.id===c.id&&!SEL?" on":"")+(marcado?" marcado":""),onclick:()=>{if(SEL){SEL.has(c.id)?SEL.delete(c.id):SEL.add(c.id);desenharLista()}else if(c.cli)abrirCli(c);else abrir(c.id).then(()=>c.busca&&destacar(c.busca.msg,$("#busca").value.trim()))}});
   if(SEL){const k=el("span",{class:"chk"});k.innerHTML=ic("check",13);it.append(k)}else it.append(avatar(c.agente));
-  it.append(el("span",{class:"tt",html:(c.cli?`<span class="term" title="Terminal conversation">${ic("terminal",13)}</span>`:"")+((EST.pedidos||[]).some(p=>p.chat===c.id)?'<span class="pk-dot" title="Waiting for root approval"></span>':c.rodando?'<span class="vivo-dot" title="Running"></span>':NOVOS.has(c.id)?'<span class="novo-dot" title="New reply"></span>':"")+esc(c.titulo)}),
+  it.append(el("span",{class:"tt",html:(c.cli?`<span class="term" title="Terminal conversation">${ic("terminal",13)}</span>`:"")+((EST.pedidos||[]).some(p=>p.chat===c.id)?'<span class="pk-dot" title="Waiting for you"></span>':c.rodando?'<span class="vivo-dot" title="Running"></span>':NOVOS.has(c.id)?'<span class="novo-dot" title="New reply"></span>':"")+esc(c.titulo)}),
    el("span",{class:"sub",title:c.cwd||""},c.cli?`${contaNome(c.conta)} · ${curta(c.cwd)||"?"} · ${plural(c.n,"prompt")}${c.ativo?" · open in a terminal":""}`:`${contaNome(c.conta)} · ${curta(c.cwd)} · ${plural(c.n,"message")}${c.fila?` · ${c.fila} queued`:""}`));
   if(c.busca&&c.busca.msg>=0)it.append(el("span",{class:"trecho",html:esc(c.busca.antes)+"<mark>"+esc(c.busca.achado)+"</mark>"+esc(c.busca.depois)}));
   const d=el("button",{class:"btn ghost ic del",title:"Pin, rename, folder, delete",onclick:e=>{e.stopPropagation();menuItem(c,d)}});d.innerHTML=ic("mais",16);it.append(d);
@@ -847,6 +884,20 @@ function fechaMenu(){const m=$("#menuCtx");if(m)m.remove()}
 document.addEventListener("pointerdown",e=>{if(!e.target.closest("#menuCtx,.item .del"))fechaMenu()},true);
 document.addEventListener("keydown",e=>{if(e.key==="Escape")fechaMenu()});
 $("#lista").addEventListener("scroll",fechaMenu,{passive:true});
+function mdChat(c){
+ const ag=c.agente==="claude"?"Claude":"Antigravity",cn=contaNome(c.conta),L=[`# ${c.titulo}`,"",[ag,cn!==ag?cn:null,c.modelo?nomeModelo(c.modelo):null,c.cwd].filter(Boolean).join(" · "),`Exported from Agents on ${new Date().toLocaleString()}`,""];
+ for(const m of c.mensagens){
+  const q=m.ts?" · "+new Date(m.ts*1000).toLocaleString():"";
+  if(m.papel==="usuario"){L.push(`## You${q}`,"",m.texto||"");for(const a of m.anexos||[])L.push(`- Attached ${a.nome} (${a.caminho})`);L.push("");continue}
+  L.push(`## ${ag}${q}`,"");
+  for(const f of m.ferramentas||[]){let r=f.entrada;try{r=resumoEntrada(JSON.parse(f.entrada))||f.entrada}catch{}L.push(`> **${f.nome}** \`${String(r).replace(/\s+/g," ").replace(/`/g,"'").slice(0,200)}\`${f.erro?" (failed)":""}`)}
+  if((m.ferramentas||[]).length)L.push("");
+  if(m.texto)L.push(m.texto,"");if(m.erro)L.push(`> Error ${m.erro}`,"");
+ }
+ return L.join("\n");
+}
+function baixar(nome,txt,tipo){const a=el("a",{href:URL.createObjectURL(new Blob([txt],{type:tipo})),download:nome});document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000)}
+async function exportarItem(c){try{const x=await api("/api/chats/"+c.id);baixar(((x.titulo||"chat").replace(/[^\p{L}\p{N}\- ]+/gu,"").trim().replace(/\s+/g,"-").slice(0,60)||"chat")+".md",mdChat(x),"text/markdown;charset=utf-8");toast("Exported")}catch(e){toast(cap(e.message))}}
 function menuItem(c,btn){
  const aberto=$("#menuCtx");fechaMenu();if(aberto&&aberto.dataset.id===c.id)return;
  const m=el("div",{class:"menu-ctx",id:"menuCtx","data-id":c.id});
@@ -855,6 +906,7 @@ function menuItem(c,btn){
  op("pin",fx?"Unpin":"Pin to top",()=>fixarItem(c,!fx));
  op("pencil","Rename",()=>renomearItem(c));
  if(c.agente==="claude"||(!c.cli&&!c.sessao))op("folder","Change folder",()=>mudarPastaItem(c));
+ if(!c.cli)op("download","Export as Markdown",()=>exportarItem(c));
  op("trash","Delete",()=>confirmarApagar([c.id]),"perigo");
  m.append(el("small",{},(c.cwd?"Folder: "+curta(c.cwd):"")+(c.agente==="agy"&&(c.cli||c.sessao)?" (Antigravity keeps the folder where the conversation started)":"")));
  document.body.append(m);const r=btn.getBoundingClientRect();
@@ -1064,6 +1116,8 @@ function desenharCab(){
  C.append(chipSel("cpu","Model",ms,c.modelo||"",v=>salvarCfg("modelo",v)));
  C.append(chipSel("shield","Permissions",PERMS[c.agente],c.perm||"",v=>salvarCfg("perm",v)));
  if(c.agente==="claude")C.append(chipSel("gauge","Reasoning effort",EFFORT,c.effort||"",v=>salvarCfg("effort",v)));
+ if((c.permitidos||[]).length){const fb=el("button",{class:"chip-sel btnc forget",title:"Tools Claude may use in this chat without asking. Click to make it ask again"});fb.innerHTML=ic("check",14)+esc("Always allowed: "+c.permitidos.join(", "));
+  fb.onclick=async()=>{if(!confirm(`Make Claude ask again before using ${c.permitidos.join(", ")} in this chat?`))return;try{const r=await api(`/api/chats/${c.id}/permitidos`,{});CHAT.permitidos=r.permitidos;desenharCab();toast("Claude will ask again")}catch(e){toast(cap(e.message))}};C.append(fb)}
  const travaPasta=trav&&c.agente!=="claude";
  const pb=el("button",{class:"chip-sel btnc",title:travaPasta?"Antigravity keeps the folder where this conversation started":trav?"Working folder (the conversation continues from the new folder)":"Working folder"});
  pb.innerHTML=ic("folder",14)+esc(curta(c.cwd));pb.disabled=travaPasta;pb.onclick=()=>pasta(c.cwd);C.append(pb);
@@ -1094,7 +1148,7 @@ function vazio(){
 function desenharMsgs(){
  const M=$("#col");M.textContent="";
  if(!CHAT||!CHAT.mensagens.length)M.append(vazio());
- if(CHAT)CHAT.mensagens.forEach((m,i)=>{const b=m.papel==="usuario"?blocoUsuario(m):blocoAssist(m);b.dataset.i=i;M.append(b)});
+ if(CHAT)CHAT.mensagens.forEach((m,i)=>{const b=m.papel==="usuario"?blocoUsuario(m,i):blocoAssist(m,i);b.dataset.i=i;M.append(b)});
  desenharFila();desenharBarra();rolar(true);
 }
 function desenharFila(){
@@ -1111,10 +1165,35 @@ async function acaoFila(i,acao){
  try{const r=await api(`/api/chats/${CHAT.id}/fila`,{i,acao});
   if(acao==="enviar"){await abrir(CHAT.id,true)}else{CHAT.fila=r.fila;desenharFila()}carregarEstado()}catch(e){toast(cap(e.message))}
 }
-function blocoUsuario(m){
+function podeVoltar(i){if(!CHAT||CHAT.agente!=="claude")return false;if(i===0)return true;const a=CHAT.mensagens[i-1];return!!(a&&a.papel==="assistente"&&a.uuid&&CHAT.sessao)}
+function blocoUsuario(m,i){
  const b=el("div",{class:"m u"},el("div",{class:"cab-m"},el("span",{},m.ts?quando(m.ts):""),el("b",{},"You")),el("div",{class:"corpo"},m.texto));
  if(m.anexos&&m.anexos.length)b.append(listaAnexos(m.anexos));
+ if(i!=null&&podeVoltar(i)){
+  const be=el("button",{class:"btn ghost",title:"Edit and send again. The original conversation stays in Claude Code"}),br=el("button",{class:"btn ghost",title:"Send again for a new reply. The original stays in Claude Code"});
+  be.innerHTML=ic("pencil",13)+"Edit";br.innerHTML=ic("refresh",13)+"Retry";be.onclick=()=>editarMsg(b,m,i);br.onclick=()=>reenviarMsg(i,null);
+  b.append(el("div",{class:"acoes-m"},be,br))}
  return b;
+}
+function ocupado(){return!!(CHAT&&(CHAT.rodando||ES||VIVO))}
+async function reenviarMsg(i,texto){
+ if(!CHAT)return;if(ocupado()){toast("Stop the current reply first");return}
+ const depois=CHAT.mensagens.length-i-1;
+ if(depois>1&&!confirm(`This replaces the ${depois} messages after it in this chat. The original conversation stays in Claude Code. Continue?`))return;
+ try{await api(`/api/chats/${CHAT.id}/reenviar`,{indice:i,texto})}catch(e){toast(cap(e.message));return}
+ CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();rodando(true);escutar(0);carregarEstado();
+}
+function editarMsg(b,m,i){
+ if(ocupado()){toast("Stop the current reply first");return}
+ const ta=el("textarea",{}),ok=el("button",{class:"btn sm pri"},"Send"),no=el("button",{class:"btn sm"},"Cancel");ta.value=m.texto||"";
+ const box=el("div",{class:"editor"},ta,el("div",{class:"f"},el("small",{},"Ctrl+Enter sends. The reply below is replaced, the original stays in Claude Code."),no,ok));
+ b.querySelector(".corpo").replaceWith(box);const ac=b.querySelector(".acoes-m");if(ac)ac.remove();ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+ no.onclick=()=>desenharMsgs();ok.onclick=()=>{if(!ta.value.trim()&&!(m.anexos||[]).length){ta.focus();return}reenviarMsg(i,ta.value)};
+ ta.onkeydown=e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();ok.click()}else if(e.key==="Escape")no.click()};
+}
+async function bifurcarMsg(i){
+ if(ocupado()){toast("Wait for the current reply to finish");return}
+ try{const n=await api(`/api/chats/${CHAT.id}/bifurcar`,{indice:i});await carregarEstado();await abrir(n.id);toast("Forked. Your next message continues from that reply")}catch(e){toast(cap(e.message))}
 }
 function listaAnexos(ax){
  const d=el("div",{class:"anx"});
@@ -1137,9 +1216,10 @@ function iconeFerr(n){n=(n||"").toLowerCase();
 function pill(f){if(!f.fim)return`<span class="pill run"><i class="anel-g"></i>Running</span>`;return f.erro?`<span class="pill err">${ic("x",12)}Error</span>`:`<span class="pill ok">${ic("check",12)}Done</span>`}
 function blocoFerr(f,novo){
  const d=el("details",{class:"tool"+(novo?" novo":"")});d.dataset.id=f.id;
- const resumo=(()=>{try{const j=JSON.parse(f.entrada);return j.command||j.CommandLine||j.file_path||j.Path||j.path||j.url||j.Url||j.pattern||j.query||j.description||j.prompt||f.entrada}catch{return f.entrada}})();
+ const resumo=(()=>{try{const j=JSON.parse(f.entrada);if(j.questions&&j.questions[0])return j.questions[0].question;if(typeof j.plan==="string")return(j.plan.match(/^#+\s*(.+)$/m)||[,"Plan"])[1];return j.command||j.CommandLine||j.file_path||j.Path||j.path||j.url||j.Url||j.pattern||j.query||j.description||j.prompt||f.entrada}catch{return f.entrada}})();
  const s=el("summary",{});s.innerHTML=`<span class="tic">${ic(iconeFerr(f.nome),14)}</span><span class="tnome">${esc(f.nome)}</span><span class="tres">${esc(String(resumo).replace(/\s+/g," ").slice(0,160))}</span><span class="pst">${pill(f)}</span>`;
  const corpo=el("div",{class:"tbody"},el("div",{class:"lbl"},"Input"),el("pre",{},f.entrada),el("div",{class:"lbl"},"Output"),el("pre",{class:"saida"},f.saida||(f.fim?"(no output)":"Waiting for output…")));
+ if(f.patch){corpo.prepend(blocoPatch(f.patch));s.querySelector(".tres").insertAdjacentHTML("afterend",statPatch(f.patch))}
  d.append(s,corpo);return d;
 }
 function metaMsg(m,texto){
@@ -1155,10 +1235,86 @@ function metaMsg(m,texto){
  return d;
 }
 function cabAssist(ag,extra){const h=el("div",{class:"cab-m"});h.append(avatar(ag),el("b",{},CURTO[ag]));if(extra)h.append(extra);return h}
-const PKEST={pendente:"Waiting for your approval",verificando:"Checking the password…",ok:"Approved",falhou:"Wrong password, nothing ran",negado:"Denied, nothing ran",expirou:"No answer in 10 minutes, nothing ran",cancelado:"Cancelled, nothing ran",erro:"Did not run"};
+const PKTIT={root:"Root permission needed",ferramenta:"Approval needed",pergunta:"Claude has a question",plano:"Plan ready for review"};
+const PKESPERA={root:"Waiting for root approval",ferramenta:"Waiting for your approval",pergunta:"Waiting for your answer",plano:"Waiting for you to review the plan"};
+const PKEST={permitido:"Allowed",respondido:"Answered",aprovado:"Approved",pendente:"Waiting for your approval",verificando:"Checking the password…",ok:"Approved",falhou:"Wrong password, nothing ran",negado:"Denied, nothing ran",expirou:"No answer in 10 minutes, nothing ran",cancelado:"Cancelled, nothing ran",erro:"Did not run"};
 const PKVISTOS=new Set();
 function pkTexto(p){let t=PKEST[p.estado]||p.estado;if(p.estado==="ok"&&p.rc!=null)t+=p.rc===0?" · command finished":` · command exited with code ${p.rc}`;return t}
+const resumoEntrada=e=>{e=e||{};return e.command||e.file_path||e.url||e.pattern||e.query||e.path||e.description||e.prompt||""};
+async function respPk(p,corpo,bts){bts.forEach(b=>b.disabled=true);try{await api("/api/pedido",{id:p.id,...corpo})}catch(e){toast(cap(e.message));bts.forEach(b=>b.disabled=false)}}
+function blocoPatch(pt){
+ let mais=0,menos=0;for(const h of pt.hunks||[])for(const l of h.linhas){if(l[0]==="+")mais++;else if(l[0]==="-")menos++}
+ const w=el("div",{class:"diff"}),cab=el("div",{class:"dcab"});
+ cab.innerHTML=ic("file",13)+`<span title="${esc(pt.arquivo)}">${esc(curta(pt.arquivo))}</span>`+(pt.novo?"<em>new file</em>":"")+`<b class="dmais">+${mais}</b><b class="dmenos">−${menos}</b>`;
+ const t=el("div",{class:"dcorpo"});
+ (pt.hunks||[]).forEach((h,k)=>{let a=h.a,b=h.b;if(k)t.append(el("div",{class:"dsep"},"⋯"));
+  for(const l of h.linhas){const s=l[0],tipo=s==="+"?"add":s==="-"?"del":"ctx",r=el("div",{class:"dl "+tipo});
+   r.append(el("span",{class:"n"},s==="+"||s==="\\"||!a?"":String(a)),el("span",{class:"n"},s==="-"||s==="\\"||!b?"":String(b)),el("span",{class:"s"},s==="+"||s==="-"?s:""),el("span",{class:"c"},l.slice(1)));
+   if(s===" "||s==="-")a++;if(s===" "||s==="+")b++;t.append(r)}});
+ if(pt.cortado)t.append(el("div",{class:"dsep"},"Diff shortened"));
+ w.append(cab,t);return w;
+}
+const statPatch=pt=>{let m=0,n=0;for(const h of pt.hunks||[])for(const l of h.linhas){if(l[0]==="+")m++;else if(l[0]==="-")n++}return`<span class="dstat"><b class="dmais">+${m}</b> <b class="dmenos">−${n}</b></span>`};
+function cartaoFerr(p){
+ const d=el("div",{class:"pk ask","data-pk":p.id}),e=p.entrada||{};
+ if(p.estado!=="pendente"){
+  d.className="pk fim "+(p.estado==="permitido"?"ok":"ruim");d.innerHTML=ic(p.estado==="permitido"?"check":"x",14);
+  d.append(el("span",{},p.ferramenta),el("span",{class:"cmd"},String(resumoEntrada(e)).replace(/\s+/g," ").slice(0,140)||"…"),
+   el("span",{},(p.estado==="negado"?"Denied":PKEST[p.estado]||p.estado)+(p.sempre?", and from now on in this chat":"")+(p.motivo?` · “${p.motivo}”`:"")));
+  return d}
+ const t=el("div",{class:"t"});t.innerHTML=ic("shield",16)+esc(`Allow ${p.ferramenta}?`);d.append(t);
+ if(p.descricao&&p.descricao!==e.command&&p.descricao!==e.file_path&&!(e.file_path||"").endsWith("/"+p.descricao))d.append(el("div",{class:"desc"},p.descricao));
+ if(p.patch)d.append(blocoPatch(p.patch));
+ else if(e.command)d.append(el("div",{class:"cmd"},e.command));
+ else if(e.url)d.append(el("div",{class:"cmd"},e.url+(e.prompt?"\n\n"+e.prompt:"")));
+ else if(Object.keys(e).length)d.append(el("pre",{class:"json"},JSON.stringify(e,null,2)));
+ const ok=el("button",{class:"btn sm pri"},"Allow"),sempre=el("button",{class:"btn sm",title:`Claude will not ask again for ${p.ferramenta} in this chat`},`Always allow ${p.ferramenta} here`),neg=el("button",{class:"btn sm"},"Deny");
+ const nota=el("input",{type:"text",placeholder:"Note for Claude, sent if you deny (optional)",maxlength:"2000"}),bts=[ok,sempre,neg,nota];
+ ok.onclick=()=>respPk(p,{acao:"aprovar"},bts);sempre.onclick=()=>respPk(p,{acao:"sempre"},bts);neg.onclick=()=>respPk(p,{acao:"negar",motivo:nota.value},bts);
+ nota.onkeydown=ev=>{if(ev.key==="Enter"){ev.preventDefault();neg.click()}};
+ d.append(el("div",{class:"f"},ok,sempre,neg),el("div",{class:"f",style:"margin-top:8px"},nota));
+ return d;
+}
+function cartaoPergunta(p){
+ const d=el("div",{class:"pk ask","data-pk":p.id}),qs=(p.entrada&&p.entrada.questions)||[];
+ if(p.estado!=="pendente"){
+  d.className="pk fim "+(p.estado==="respondido"?"ok":"ruim");d.innerHTML=ic(p.estado==="respondido"?"check":"x",14);
+  if(p.estado==="respondido"){const r=p.respostas||{};for(const q of qs)d.append(el("span",{},(q.header||q.question||"")+":"),el("span",{class:"resp"},r[q.question]||"(no answer)"))}
+  else d.append(el("span",{},"Question"),el("span",{},p.estado==="negado"?"Skipped"+(p.motivo?` · “${p.motivo}”`:""):(PKEST[p.estado]||p.estado).replace(", nothing ran","")));
+  return d}
+ const t=el("div",{class:"t"});t.innerHTML=ic("help",16)+"Claude asks";d.append(t);
+ const est=qs.map(()=>({sel:new Set(),outro:""}));
+ qs.forEach((q,qi)=>{
+  const box=el("div",{class:"q"});if(q.header)box.append(el("div",{class:"hd"},q.header));box.append(el("div",{class:"qt"},q.question||""));
+  const ops=el("div",{class:"ops"});
+  for(const o of q.options||[]){const b=el("button",{class:"op",type:"button"},el("div",{},o.label||""),o.description&&o.description!==o.label?el("small",{},o.description):null);
+   b.onclick=()=>{const s=est[qi].sel;if(q.multiSelect){if(s.has(o.label))s.delete(o.label);else s.add(o.label)}else{s.clear();s.add(o.label);ops.querySelectorAll(".op").forEach(x=>x.classList.remove("on"))}b.classList.toggle("on",s.has(o.label))};
+   ops.append(b)}
+  const outro=el("input",{type:"text",placeholder:q.multiSelect?"Something else (optional)":"Or type your own answer",maxlength:"2000"});
+  outro.oninput=()=>{est[qi].outro=outro.value;if(!q.multiSelect&&outro.value.trim()){est[qi].sel.clear();ops.querySelectorAll(".op").forEach(x=>x.classList.remove("on"))}};
+  box.append(ops,el("div",{class:"f",style:"margin-top:6px"},outro));d.append(box)});
+ const env=el("button",{class:"btn sm pri"},"Send answer"),pula=el("button",{class:"btn sm"},"Skip"),bts=[env,pula];
+ env.onclick=()=>{const respostas={};qs.forEach((q,qi)=>{const v=[...est[qi].sel];if(est[qi].outro.trim())v.push(est[qi].outro.trim());respostas[q.question]=v.join(", ")});
+  if(!Object.values(respostas).some(Boolean)){toast("Pick an option or type an answer");return}respPk(p,{acao:"responder",respostas},bts)};
+ pula.onclick=()=>respPk(p,{acao:"negar"},bts);
+ d.append(el("div",{class:"f",style:"margin-top:10px"},env,pula));return d;
+}
+function cartaoPlano(p){
+ const d=el("div",{class:"pk ask","data-pk":p.id}),plano=(p.entrada&&p.entrada.plan)||"";
+ if(p.estado!=="pendente"){
+  d.className="pk fim "+(p.estado==="aprovado"?"ok":"ruim");d.innerHTML=ic(p.estado==="aprovado"?"check":"x",14);
+  const r=p.estado==="aprovado"?(p.modo==="acceptEdits"?"Plan approved, edits accepted automatically":"Plan approved, Claude asks before changes"):p.estado==="negado"?"Plan sent back"+(p.motivo?` · “${p.motivo}”`:""):"Plan · "+(PKEST[p.estado]||p.estado).replace(", nothing ran","");
+  d.append(el("details",{},el("summary",{},r),el("div",{class:"plano corpo",html:md(plano)})));return d}
+ const t=el("div",{class:"t"});t.innerHTML=ic("lista",16)+"Plan ready for review";d.append(t);
+ d.append(el("div",{class:"plano corpo",html:md(plano)}));
+ const a1=el("button",{class:"btn sm pri"},"Approve and accept edits"),a2=el("button",{class:"btn sm"},"Approve, ask before changes");
+ const nota=el("input",{type:"text",placeholder:"What should change?",maxlength:"2000"}),volta=el("button",{class:"btn sm"},"Keep planning"),bts=[a1,a2,nota,volta];
+ a1.onclick=()=>respPk(p,{acao:"aprovar",modo:"acceptEdits"},bts);a2.onclick=()=>respPk(p,{acao:"aprovar",modo:"manual"},bts);volta.onclick=()=>respPk(p,{acao:"negar",motivo:nota.value},bts);
+ nota.onkeydown=ev=>{if(ev.key==="Enter"){ev.preventDefault();volta.click()}};
+ d.append(el("div",{class:"f"},a1,a2),el("div",{class:"f",style:"margin-top:8px"},nota,volta));return d;
+}
 function cartaoPk(p){
+ if(p.tipo&&p.tipo!=="root")return p.tipo==="pergunta"?cartaoPergunta(p):p.tipo==="plano"?cartaoPlano(p):cartaoFerr(p);
  const d=el("div",{class:"pk","data-pk":p.id});
  if(p.estado!=="pendente"){
   d.classList.add("fim");if(p.estado==="ok")d.classList.add("ok");else if(p.estado!=="verificando")d.classList.add("ruim");
@@ -1187,11 +1343,12 @@ function cartaoPk(p){
 function pkAlerta(p,id,titulo){
  if(PKVISTOS.has(p.id))return;PKVISTOS.add(p.id);
  somAtivo();bip();vibra();
- const tt="Root permission needed · "+(titulo||"Chat");
+ const tt=(PKTIT[p.tipo]||PKTIT.root)+" · "+(titulo||"Chat");
  if(document.visibilityState==="visible"){if(!(CHAT&&CHAT.id===id))toast(tt);return}
- notifica(tt,{body:p.cmd||"",tag:"pk-"+p.id,requireInteraction:true,data:{id}});
+ const q=p.entrada&&p.entrada.questions&&p.entrada.questions[0];
+ notifica(tt,{body:p.cmd||(q&&q.question)||String(resumoEntrada(p.entrada)).slice(0,200)||p.ferramenta||"",tag:"pk-"+p.id,requireInteraction:true,data:{id}});
 }
-function blocoAssist(m){
+function blocoAssist(m,i){
  const b=el("div",{class:"m a"});
  b.append(cabAssist(CHAT.agente,el("span",{},(m.ts?quando(m.ts):"")+(m.importada?" · imported from CLI":""))));
  if(m.pensamento){const p=el("details",{class:"pens"});const s=el("summary",{});s.innerHTML=ic("brain",14)+"Thinking";p.append(s,el("div",{class:"ptxt"},m.pensamento));b.append(p)}
@@ -1200,7 +1357,10 @@ function blocoAssist(m){
  if(m.texto){const c=el("div",{class:"corpo",html:md(m.texto)});b.append(c);enriquecer(c)}
  if(m.negadas&&m.negadas.length)b.append(el("div",{class:"erro"},"Permission denied for: "+m.negadas.join(", ")+". Change the permission mode in the header."));
  if(m.erro)b.append(el("div",{class:"erro"},cap(m.erro)));
- if(!m.importada)b.append(metaMsg(m,m.texto));
+ const meta=m.importada?null:metaMsg(m,m.texto);
+ if(i!=null&&CHAT.agente==="claude"&&m.uuid&&CHAT.sessao){const bf=el("button",{class:"btn ghost txt",title:"A new chat that continues from this reply, leaving this one as it is"});bf.innerHTML=ic("branch",13)+"Fork";bf.onclick=()=>bifurcarMsg(i);
+  if(meta)meta.append(bf);else b.append(el("div",{class:"meta"},bf))}
+ if(meta)b.append(meta);
  return b;
 }
 function desenharBarra(ctxVivo){
@@ -1235,7 +1395,7 @@ function indicador(ag){
  let k=0,tk=0;
  SPIN=setInterval(()=>{tk++;const s=Math.round((Date.now()-t0)/1000);
   x.textContent=`${s}s`+(VIVO&&VIVO.ctx?` · ${fmt(VIVO.ctx)} tokens in context`:"")+(VIVO&&VIVO.nf?` · ${plural(VIVO.nf,"tool")}`:"");
-  if(tk%5===0){k++;v.textContent=(VIVO&&VIVO.status?VIVO.status:vs[k%vs.length])+"…";v.classList.remove("verbo-anim");void v.offsetWidth;v.classList.add("verbo-anim")}},500);
+  if(tk%5===0){k++;const es=VIVO&&VIVO.espera&&Object.values(VIVO.espera)[0];v.textContent=(es||(VIVO&&VIVO.status)||vs[k%vs.length])+"…";v.classList.remove("verbo-anim");void v.offsetWidth;v.classList.add("verbo-anim")}},500);
  return{w,sk};
 }
 function pararSpin(){if(SPIN){clearInterval(SPIN);SPIN=null}}
@@ -1264,14 +1424,15 @@ function escutar(desde){
    case"texto":comecou();fimPens();VIVO.status="Writing";VIVO.texto+=ev.s;pinta();break;
    case"pensando":comecou();if(pens.hidden){pens.hidden=false;pens.open=true;VIVO.pens0=Date.now()}ptxt.textContent+=ev.s;ptxt.scrollTop=ptxt.scrollHeight;rolar();break;
    case"ferramenta":comecou();fimPens();VIVO.nf++;VIVO.status="Running "+ev.nome;if(VIVO.texto&&!VIVO.texto.endsWith("\n"))VIVO.texto+="\n\n";ferr.append(blocoFerr(ev,true));rolar();break;
-   case"resultado":{VIVO.status="";const d=ferr.querySelector(`[data-id="${CSS.escape(ev.id)}"]`);if(d){d.querySelector(".saida").textContent=ev.saida||"(no output)";d.querySelector(".pst").innerHTML=pill({fim:true,erro:ev.erro})}break}
+   case"resultado":{VIVO.status="";const d=ferr.querySelector(`[data-id="${CSS.escape(ev.id)}"]`);if(d){d.querySelector(".saida").textContent=ev.saida||"(no output)";d.querySelector(".pst").innerHTML=pill({fim:true,erro:ev.erro});if(ev.patch){const tb=d.querySelector(".tbody"),v=tb.querySelector(".diff");if(v)v.remove();tb.prepend(blocoPatch(ev.patch));d.querySelector(".tres").insertAdjacentHTML("afterend",statPatch(ev.patch))}}break}
    case"ctx":VIVO.ctx=ev.usado;desenharBarra(ev.usado);break;
    case"sistema":if(ev.modelo){modelo.textContent=nomeModelo(ev.modelo);modelo.hidden=false}break;
    case"sub":VIVO.status="Subagent: "+ev.s;break;
    case"limite":EST.limites[ev.conta]={info:ev.info,quando:ev.quando};desenharUso();break;
    case"erro":b.append(el("div",{class:"erro"},cap(ev.s)));break;
    case"pedido":{comecou();const novo=cartaoPk(ev),v=pks.querySelector(`[data-pk="${CSS.escape(ev.id)}"]`);if(v)v.replaceWith(novo);else pks.append(novo);
-    if(ev.estado==="pendente"){VIVO.status="Waiting for root approval";pkAlerta(ev,id,CHAT&&CHAT.titulo);rolar(true)}else PKVISTOS.add(ev.id);break}
+    VIVO.espera=VIVO.espera||{};
+    if(ev.estado==="pendente"){VIVO.espera[ev.id]=PKESPERA[ev.tipo]||PKESPERA.root;pkAlerta(ev,id,CHAT&&CHAT.titulo);rolar(true)}else{delete VIVO.espera[ev.id];PKVISTOS.add(ev.id)}break}
    case"fim":{ES.close();ES=null;VIVO=null;pararSpin();rodando(false);const x=EST.chats.find(y=>y.id===id);if(x)x.rodando=false;const fm=ev.msg||{};avisar(id,CHAT&&CHAT.titulo,fm.texto,!!fm.erro);abrir(id,true);carregarEstado();carregarUso(conta);break}
   }
  };
@@ -1446,6 +1607,24 @@ function ajustes(){
  linha("Dictation language",SR?"Used by the microphone button":"This browser has no speech recognition, use Chrome",vs);
  linha("Rich replies","Tell agents they can answer with live HTML previews and show PC files inline (about 250 tokens, cached)",tog(EST.padrao.dica!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{dica:v});toast(v?"Agents will know":"Hint off")}catch(e){toast(cap(e.message))}}));
  if(EST.root)linha("Root password here","When an agent runs pkexec, ask for your password in this page (https only) instead of the window on the PC screen",tog(EST.padrao.root!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{root:v});toast(v?"Root requests come here":"Root requests go to the PC screen")}catch(e){toast(cap(e.message))}}));
+ sec("Updates");
+ const vn=el("div",{class:"n"},el("div",{class:"t"},"Agents "+(EST.versao||"")),el("small",{},"Looks for a new release only when you click"));
+ const vb=el("button",{class:"btn sm"},"Check for updates"),vi=el("div",{});B.append(el("div",{class:"cart"},vn,vb),vi);
+ vb.onclick=async()=>{vb.disabled=true;vb.textContent="Checking…";try{mostraAtualizacao(await api("/api/atualizacao?forcar=1"),vi,vn)}catch(e){toast(cap(e.message))}vb.disabled=false;vb.textContent="Check again"};
+}
+function mostraAtualizacao(u,vi,vn){
+ vi.textContent="";vn.querySelector("small").textContent=u.nova?`Version ${u.ultima} is available`:`This is the latest version (${u.atual})`;
+ if(!u.nova)return;
+ if(u.notas)vi.append(el("details",{class:"notas"},el("summary",{},"What's new in "+u.ultima),el("div",{class:"corpo",html:md(u.notas)})));
+ if(!u.instalavel){vi.append(el("p",{class:"nota"},"This copy runs from a git checkout. Update it with git pull."));return}
+ const b=el("button",{class:"btn sm pri"},"Update now");
+ b.onclick=async()=>{if(!confirm(`Update to ${u.ultima} now? The service restarts for a few seconds.`))return;b.disabled=true;try{await api("/api/atualizar",{});aguardaVersao(u.atual)}catch(e){toast(cap(e.message));b.disabled=false}};
+ vi.append(el("div",{style:"display:flex;justify-content:flex-end;margin-top:8px"},b));
+}
+function aguardaVersao(antiga){
+ toast("Updating, the page reloads by itself");const t0=Date.now();
+ const iv=setInterval(async()=>{if(Date.now()-t0>240000){clearInterval(iv);toast("The update is taking long. See ~/.local/share/agents-web/update.log");return}
+  try{const e=await api("/api/estado");if(e.versao&&e.versao!==antiga){clearInterval(iv);location.reload()}}catch{}},2500);
 }
 function dlgSeguro(){
  abreDlg("Secure address","estreito");const B=$("#dlgB");

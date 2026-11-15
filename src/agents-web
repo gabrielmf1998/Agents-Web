@@ -49,7 +49,11 @@ case "${1:-start}" in
     version|--version|-v)
         sed -n 's/^VERSAO = "\(.*\)"/\1/p' "$APP/server.py" ;;
     update)
-        curl -fsSL "$INSTALLER" | bash ;;
+        if [ "$(cat "$APP/source" 2>/dev/null)" = gitlab ]; then
+            curl -fsSL "https://gitlab.com/gabriel17166/agents-web/-/raw/main/install.sh" | bash -s -- --gitlab
+        else
+            curl -fsSL "$INSTALLER" | bash
+        fi ;;
     uninstall)
         exec bash "$APP/install.sh" --uninstall "${@:2}" ;;
     -h|--help|help)
