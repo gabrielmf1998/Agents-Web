@@ -206,9 +206,11 @@ Settings, Updates, calls `api.github.com/repos/gabrielmf1998/Agents-Web/releases
 `releases/permalink/latest` endpoint when `~/.local/opt/agents-web/source` says `gitlab`) only when you
 click, and compares the tag with the running version. **Update now** is offered only for a copy installed
 by `install.sh` and only when no reply is running. It starts the same `curl … install.sh | bash -s --
---no-deps` as `agents-web update` in a session of its own, because the installer stops the tray and with it
-the whole process group of the server. The output goes to `update.log`, and the page reloads when the
-server reports the new version.
+--no-deps` as `agents-web update` in a transient systemd user unit of its own (`agents-web-update-<time>`,
+`ExitType=cgroup`). The installer stops the tray, which ends the server's whole process group and, when
+the tray itself runs in a unit, that unit too. A separate unit survives both, and the tray the installer
+starts again stays alive in it. Without `systemd-run` it falls back to a new session. The output goes to
+`update.log`, and the page reloads when the server reports the new version.
 
 ## Root approvals
 

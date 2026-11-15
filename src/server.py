@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.4.0"
+VERSAO = "1.4.1"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 # AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
@@ -2296,13 +2296,36 @@ def atualizar():
     if time.time() - ATUALIZA["rodando"] < 120:
         raise ValueError("an update is already running")
     o = origem()
-    script = (f"sleep 1; echo \"== $(date) update from {o}\"; curl -fsSL {shlex.quote(INSTALADORES[o])} "
+    script = (f"exec >>{shlex.quote(str(ATUALIZA_LOG))} 2>&1 </dev/null; sleep 1; "
+              f"echo \"== $(date) update from {o}\"; curl -fsSL {shlex.quote(INSTALADORES[o])} "
               f"| bash -s -- --no-deps{' --gitlab' if o == 'gitlab' else ''}")
-    with open(ATUALIZA_LOG, "a") as log:
+    if not _atualizar_unidade(script):
         # its own session: the tray stops this server's whole process group while it reinstalls
-        subprocess.Popen(["bash", "-c", script], cwd=str(HOME), stdin=subprocess.DEVNULL, stdout=log,
-                         stderr=subprocess.STDOUT, start_new_session=True, close_fds=True)
+        subprocess.Popen(["bash", "-c", script], cwd=str(HOME), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                         close_fds=True)
     ATUALIZA["rodando"] = time.time()
+
+
+def _atualizar_unidade(script):
+    # The tray often runs inside a systemd unit (autostart, systemd-run). When the installer stops the tray, a
+    # unit that ends with its main process kills everything left in it, the installer included. A unit of its
+    # own avoids that, and ExitType=cgroup keeps it alive for the tray the installer starts again inside it.
+    sr = shutil.which("systemd-run")
+    if not sr:
+        return False
+    cmd = [sr, "--user", "--collect", "--quiet", "-p", "ExitType=cgroup", f"--unit=agents-web-update-{int(time.time())}",
+           f"--working-directory={HOME}"]
+    for k in ("PATH", "HOME", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
+              "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "LANG"):
+        if os.environ.get(k):
+            cmd.append(f"--setenv={k}={os.environ[k]}")
+    try:
+        r = subprocess.run(cmd + ["bash", "-c", script], stdin=subprocess.DEVNULL, capture_output=True,
+                           timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0
 
 
 # ---------------------------------------------------------------- HTTP

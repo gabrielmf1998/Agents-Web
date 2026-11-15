@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.1 (2026-11-15)
+
+Fixes
+
+- "Update now" could stop halfway when the tray runs inside a systemd unit (for example one started with
+  `systemd-run`). Stopping the tray ended the unit, and systemd killed the installer with it. The update now
+  runs in a unit of its own (`agents-web-update-<time>`), and the restarted tray lives on in it. Without
+  systemd it runs in its own session as before.
+
 ## 1.4.0 (2026-11-15)
 
 New
