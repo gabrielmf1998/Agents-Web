@@ -75,7 +75,7 @@ update_in_page() { # $1: expected kind
 stop_all() {
     sleep 1
     [ -n "$(tpids agents-web-tray)" ] || bad "no tray was running"
-    kill $(tpids agents-web-tray) 2>/dev/null
+    tpids agents-web-tray | while read -r t; do kill "$t" 2>/dev/null; done
     espera '[ -z "$(tserver)" ]' 15 && ok "quitting the tray stopped the server" || bad "server left running"
     espera '[ -z "$(tpids agents-web-tray)" ]' 15 || bad "tray did not exit"
 }
@@ -103,7 +103,9 @@ pkg)
     step "update in the page (pkexec stand in runs the package manager)"
     update_in_page "$(cat /usr/lib/agents-web/install-kind)"
     [ "$(U agents-web version)" = $NEW ] && ok "package is now $NEW" || bad "package version $(U agents-web version)"
-    U agents-web update 2>&1 | grep -q "is the latest version" && ok "agents-web update: already latest" || bad "terminal update"
+    # against the fake release: the real GitHub API limits unauthenticated calls from shared CI addresses
+    if U env AGENTS_WEB_RELEASES_API=file:///dist/release.json agents-web update >/tmp/up.log 2>&1 && grep -q "is the latest version" /tmp/up.log
+    then ok "agents-web update: already latest"; else bad "terminal update"; cat /tmp/up.log; fi
     stop_all
     step "remove"
     "${R[@]}" >/tmp/r.log 2>&1 && [ ! -e /usr/lib/agents-web ] && ok "package removed, /usr/lib/agents-web gone" || { bad "remove"; tail /tmp/r.log; } ;;
@@ -128,7 +130,8 @@ script)
     else bad "install.sh --package"; tail -20 /tmp/p.log; fi
     [ "$(U agents-web version)" = $NEW ] && ok "/usr/bin/agents-web reports $NEW" || bad "package version $(U agents-web version)"
     [ -f /home/tester/.config/agents-web/config.json ] && ok "settings kept across the move" || bad "settings lost"
-    if espera saude 40 && [ "$(readlink "/proc/$(tpids agents-web-tray | head -1)/exe")" = /usr/lib/agents-web/agents-web-tray ]; then
+    # cmdline, not exe: a container without CAP_SYS_PTRACE cannot read the exe link of another user's process
+    if espera saude 40 && tr '\0' ' ' <"/proc/$(tpids agents-web-tray | head -1)/cmdline" | grep -q '^/usr/lib/agents-web/agents-web-tray'; then
         ok "the running copy started again from the package"; else bad "tray not restarted from the package"; fi
     stop_all
     step "remove the package and purge"
