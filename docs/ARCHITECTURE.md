@@ -104,6 +104,43 @@ Opening one creates a web chat that resumes that session. Renaming appends a tit
 transcript, the same one `/rename` writes, and deleting removes the CLI's own session files. A Claude
 chat can switch its working folder, and the next reply resumes the session from the new folder.
 
+### Claude accounts
+
+Each Claude account is a `CLAUDE_CONFIG_DIR`, and Claude Code keeps sessions per config folder
+(`projects/<folder name>/<session>.jsonl`, plus `<session>/` for subagents, `file-history/<session>` and
+`session-env/<session>`).
+
+**Moving a chat** (`chats/<id>/conta`) moves those files for the chat's session and every older branch
+(`antigas`) to the other account. It is all or nothing:
+
+1. The server lists every file to move. A session that another chat also uses (a fork) is copied instead.
+2. Each file goes over with `rename` (a copy and delete across file systems). A file already at the target
+   that differs is first renamed aside.
+3. If any step fails, the steps done so far are undone in reverse, including the folders created, and the
+   request answers 400 with the reason. The chat file is only changed after every file is in place, and the
+   sources are deleted only after the chat file is saved.
+
+A chat with no model or effort of its own gets them pinned from the old account (the model of its last reply,
+the effort in that account's `settings.json`), so the move does not change them. The response says what it
+pinned in `fixado`.
+
+**Switch at the limit.** With `troca_auto` on, a Claude reply that ends in a usage limit error makes the server
+pick the account with the lowest 5-hour use among the others (skipping signed out accounts, accounts whose
+last `rate_limit_event` was rejected and accounts already tried for this message; the usage lookups run side by
+side), move the chat there, add a
+`troca` event and a `troca` note to the reply, and send "Continue where you left off." as a message marked
+`auto`. A message you send yourself clears the list of tried accounts.
+
+**One memory.** Claude Code keeps its memory in `<config dir>/projects/<folder name>/memory`, where the folder
+name comes from the git root of the working folder (the main checkout for a worktree). With `memoria_unica`
+on, the server starts Claude on every account other than the main one (the first Claude account) with
+`--settings '{"autoMemoryDirectory": "<main config dir>/projects/<name>/memory"}'`. Once per memory folder (looked
+for at startup, when the option is turned on, and for the chat's project before each reply), the
+memories an account had before are merged into the main account's folder: files with a name already taken
+and other content get the account id added, missing lines are appended to `MEMORY.md` under a heading, and
+the old `MEMORY.md` is copied to `~/.local/share/agents-web/memory-backups/`. `memorias_unidas` in
+`config.json` records the folders already merged.
+
 ### Usage limits
 
 - Claude: the server reads the account's OAuth access token from `<config dir>/.credentials.json` and calls
@@ -132,7 +169,7 @@ hidden folder gets a link for that one file only.
 
 | Path | Content |
 |---|---|
-| `~/.config/agents-web/config.json` | accounts, defaults, PC token, paired devices, pinned chats, saved prompts (mode 600) |
+| `~/.config/agents-web/config.json` | accounts, defaults, PC token, paired devices, pinned chats, saved prompts, merged memory folders (mode 600) |
 | `~/.config/agents-web/contas/<id>/` | `CLAUDE_CONFIG_DIR` of each extra Claude account |
 | `~/.config/agents-web/tls/` | the local CA and the server certificate (folder 700, keys 600) |
 | `~/.local/share/agents-web/chats/<id>.json` | one file per web chat (messages, tool calls, settings) |
@@ -141,6 +178,7 @@ hidden folder gets a link for that one file only.
 | `~/.local/share/agents-web/limites.json`, `uso.json` | usage caches |
 | `~/.local/share/agents-web/server.log` | stdout and stderr of the server, written by the tray (`server.log.1`: the run before) |
 | `~/.local/share/agents-web/update.log` | output of updates started from the page |
+| `~/.local/share/agents-web/memory-backups/` | the `MEMORY.md` of the main account before each memory merge |
 
 Writes go to a temporary file (one per writer) followed by a rename, so a crash never leaves half a JSON
 file and two threads saving the same file never mix their bytes.
@@ -157,7 +195,7 @@ that way. They are stable identifiers, not text shown to users.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `estado` | GET | accounts, chats, limits, defaults, network info, pending root requests, pinned chats, saved prompts |
+| `estado` | GET | accounts (and the main Claude account, `principal`), chats, limits, defaults, network info, pending root requests, pinned chats, saved prompts |
 | `chats` | POST | create a chat |
 | `chats/<id>` | GET | a chat with all its messages |
 | `chats/<id>/enviar` | POST | send a message (queued when a reply is running) |
@@ -168,7 +206,7 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/duplicar` | POST | copy a chat |
 | `chats/<id>/reenviar` | POST | edit or retry message `indice` (`texto`, or `null` to resend it as it was) |
 | `chats/<id>/bifurcar` | POST | a new chat that continues from reply `indice` |
-| `chats/<id>/conta` | POST | continue a Claude chat on another Claude account (`conta`), moving its CLI session |
+| `chats/<id>/conta` | POST | continue a Claude chat on another Claude account (`conta`), moving its CLI session; returns the chat and `fixado` (model and effort pinned) |
 | `chats/<id>/titulo` | POST | name the chat now with Claude Haiku |
 | `titulos` | GET, POST | start naming the chats still called after their first message, and its progress |
 | `chats/<id>/permitidos` | POST | forget the always allowed tools (`tirar`: one name, or all) |
@@ -183,7 +221,7 @@ that way. They are stable identifiers, not text shown to users.
 | `uso` | GET | limits and token totals per account |
 | `contas/status`, `contas/login`, `contas/nova`, `contas/editar` | GET, POST | accounts |
 | `cli/sessoes`, `cli/lista`, `cli/renomear`, `cli/apagar`, `cli/importar` | GET, POST | terminal sessions |
-| `preferencias` | POST | default settings |
+| `preferencias` | POST | default settings, including `troca_auto` (switch account at the limit) and `memoria_unica` (one memory) |
 | `prompts` | POST | replace the saved prompts (`prompts`: a list of `{id, nome, texto}`, up to 200) |
 | `pedido` | POST | answer a card: a root request (password or deny), a tool (`aprovar`, `sempre`, `negar` with `motivo`), a question (`responder` with `respostas`) or a plan (`aprovar` with `modo`, or `negar`) |
 | `atualizacao?forcar=1`, `atualizar` | GET, POST | check the latest release, install it |
@@ -216,8 +254,14 @@ pinned chat or one with a draft is never hidden or removed.
 The fake reads its stdin like the real CLI and can ask for a permission, a question or a plan. The tests cover the
 access rules (token, `Host` check, https on the same port, the CA name constraints), a full reply with
 `--resume`, the queue, stop by interrupt, approvals (allow, deny with a note, always allow), questions, plans,
-diffs, edit, retry and fork, search, delete, uploads, signed `/f/` links (folder scope, hidden folders, `..`,
+diffs, edit, retry and fork, account moves (all or nothing, pinned model and effort), the switch at the
+limit, the shared memory, search, delete, uploads, signed `/f/` links (folder scope, hidden folders, `..`,
 ranges), the preview sandbox, the manifest and icons.
+
+`tests/e2e_contas.py` is run by hand. It starts a second server on a free port with temporary data and the real
+Claude accounts, and checks with the real CLI that a moved conversation is remembered on the other account and
+back, that tool calls, edited branches and forks survive a move, that `claude --resume` in a terminal finds a
+moved session, and that a chat on one account recalls a memory saved on another.
 
 ## Updates
 

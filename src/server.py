@@ -3,12 +3,12 @@
 # Python standard library only. Listens on 0.0.0.0 (IPv4) but only accepts loopback and the
 # local network (zt*, docker, VPN and similar interfaces are left out). Phones pair with a PIN.
 # https://github.com/gabrielmf1998/Agents-Web (MIT license)
-import json, os, sys, time, threading, subprocess, signal, secrets, re, ipaddress
+import json, os, sys, time, threading, subprocess, signal, secrets, re, ipaddress, errno
 import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.7.0"
+VERSAO = "1.8.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 # AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
@@ -87,6 +87,159 @@ def env_conta(conta):
 
 def dir_claude(conta):
     return Path(conta["dir"]) if conta.get("dir") else HOME / ".claude"
+
+
+def conta_principal():
+    """The Claude account whose memory every Claude account shares: the first one (claude1, ~/.claude)."""
+    cs = [c for c in CFG["contas"] if c["agente"] == "claude"]
+    return next((c for c in cs if c["id"] == "claude1"), cs[0] if cs else None)
+
+
+def raiz_projeto(cwd):
+    """The folder Claude Code files a project's memory under: the main checkout of the git repository that
+    holds cwd (a linked worktree counts as its main checkout), or cwd itself outside a repository."""
+    p = Path(os.path.realpath(cwd))
+    for d in (p, *p.parents):
+        g = d / ".git"
+        if g.is_dir():
+            return d
+        if g.is_file():
+            try:
+                alvo = Path(g.read_text().split("gitdir:", 1)[1].strip())
+            except (OSError, IndexError):
+                return d
+            alvo = alvo if alvo.is_absolute() else (d / alvo)
+            if alvo.parent.name == "worktrees" and alvo.parent.parent.name == ".git":
+                return alvo.parent.parent.parent
+            return d
+    return p
+
+
+def memoria_comum(conta, cwd):
+    """The memory folder a Claude run on this account should use (passed as autoMemoryDirectory), so all
+    accounts read and write one memory per project: the main account's. None for the main account itself
+    (its own default is that folder), when the option is off, or when the folder cannot be named for sure."""
+    if not CFG["padrao"].get("memoria_unica", True) or not conta or conta["agente"] != "claude":
+        return None
+    princ = conta_principal()
+    if not princ or princ["id"] == conta["id"] or dir_claude(princ).resolve() == dir_claude(conta).resolve():
+        return None
+    nome = re.sub(r"[^A-Za-z0-9]", "-", str(raiz_projeto(cwd)))
+    base = dir_claude(princ) / "projects"
+    if len(nome) > 200:
+        # Claude Code shortens long names with a hash of its own: reuse the folder it already made
+        achados = [p for p in base.glob(nome[:200] + "-*") if p.is_dir()]
+        return achados[0] / "memory" if len(achados) == 1 else None
+    return base / nome / "memory"
+
+
+MEM_TRAVA = threading.Lock()
+
+
+def _copia_memoria(org, dst, conta):
+    """Copy the memory files of one project from another account into the shared folder. Files already
+    there with other content are kept, and the copy gets the account id in its name. Index lines of
+    MEMORY.md that point to files the shared index does not list yet are appended under a heading."""
+    arqs = sorted(p for p in org.iterdir() if p.is_file() and not p.is_symlink() and not p.name.startswith("."))
+    if not arqs:
+        return None
+    dst.mkdir(parents=True, exist_ok=True)
+    nomes, n = {}, 0
+    for p in arqs:
+        if p.name == "MEMORY.md":
+            continue
+        alvo = dst / p.name
+        dados = p.read_bytes()
+        if alvo.exists() and alvo.read_bytes() != dados:
+            alvo = dst / f"{p.stem}-{conta['id']}{p.suffix}"
+        nomes[p.name] = alvo.name
+        if alvo.exists() and alvo.read_bytes() == dados:
+            continue
+        shutil.copy2(p, alvo)
+        n += 1
+    idx = org / "MEMORY.md"
+    if idx.is_file():
+        destino = dst / "MEMORY.md"
+        linhas = idx.read_text(errors="replace").splitlines()
+        ler = lambda: destino.read_text(errors="replace") if destino.exists() else ""
+        atual = ler()
+        for _ in range(5):
+            novas = []
+            for linha in linhas:
+                m = re.search(r"\]\(([^)\s]+)\)", linha)
+                if not m:
+                    continue
+                ref = nomes.get(m.group(1), m.group(1))
+                if f"]({ref})" in atual or any(f"]({ref})" in x for x in novas):
+                    continue
+                novas.append(linha.replace(f"]({m.group(1)})", f"]({ref})", 1))
+            if not novas:
+                break
+            texto = (atual.rstrip("\n") + "\n\n" if atual.strip() else "") + \
+                f"From the {conta.get('nome') or conta['id']} account\n" + "\n".join(novas) + "\n"
+            tmp = destino.with_name(f".MEMORY.md.{secrets.token_hex(4)}")
+            tmp.write_text(texto)
+            agora = ler()
+            if agora != atual:
+                # Claude wrote to the index meanwhile: start again from what it wrote
+                tmp.unlink()
+                atual = agora
+                continue
+            if atual:
+                guarda = DATA / "memory-backups"
+                guarda.mkdir(parents=True, exist_ok=True)
+                (guarda / f"{dst.parent.name}-MEMORY-{time.strftime('%Y%m%d-%H%M%S')}-{conta['id']}-{secrets.token_hex(2)}.md").write_text(atual)
+            os.replace(tmp, destino)
+            n += 1
+            break
+    return n
+
+
+def unir_memorias(cwd=None):
+    """Once per account and project, bring what the other Claude accounts remembered on their own into the
+    shared memory, so turning the shared memory on loses nothing. Their own folders stay as they were.
+    With `cwd`, only the project of that folder (before a reply); without it, every project."""
+    if not CFG["padrao"].get("memoria_unica", True):
+        return
+    princ = conta_principal()
+    if not princ:
+        return
+    padrao = "*"
+    if cwd:
+        nome = re.sub(r"[^A-Za-z0-9]", "-", str(raiz_projeto(cwd)))
+        padrao = nome if len(nome) <= 200 else nome[:200] + "-*"
+    with MEM_TRAVA:
+        with trava:
+            feitos = {k: list(v) for k, v in (CFG.get("memorias_unidas") or {}).items()}
+            contas = [dict(c) for c in CFG["contas"]]
+        novos = {}
+        for conta in contas:
+            if conta["agente"] != "claude" or conta["id"] == princ["id"]:
+                continue
+            a, b = dir_claude(princ), dir_claude(conta)
+            if a.resolve() == b.resolve():
+                continue
+            lista = feitos.get(conta["id"]) or []
+            for org in sorted((b / "projects").glob(padrao + "/memory")):
+                nome = org.parent.name
+                if nome in lista or org.is_symlink() or not org.is_dir():
+                    continue
+                try:
+                    n = _copia_memoria(org, a / "projects" / nome / "memory", conta)
+                except OSError as e:
+                    print(f"memory of {conta['id']} for {nome} not merged: {e!r}", flush=True)
+                    continue
+                if n is None:
+                    continue    # nothing there yet: look again next time
+                if n:
+                    print(f"memory of {conta['id']} for {nome}: {n} files merged into {princ['id']}", flush=True)
+                novos.setdefault(conta["id"], []).append(nome)
+        if novos:
+            with trava:
+                todos = CFG.setdefault("memorias_unidas", {})
+                for cid, nomes in novos.items():
+                    todos[cid] = list(dict.fromkeys((todos.get(cid) or []) + nomes))
+                salvar_json(CFG_FILE, CFG)
 
 
 # ---------------------------------------------------------------- network
@@ -889,6 +1042,9 @@ class Execucao:
                     if c["fork"].get("em"):
                         cmd += ["--resume-session-at", c["fork"]["em"]]
                     cmd += ["--fork-session"]
+            mem = memoria_comum(conta_por_id(c.get("conta", "")), c.get("cwd") or str(HOME))
+            if mem:
+                cmd += ["--settings", json.dumps({"autoMemoryDirectory": str(mem)})]
             extra = [DICA] if CFG["padrao"].get("dica", True) else []
             if pk_ativo():
                 extra.append(DICA_PK)
@@ -930,6 +1086,11 @@ class Execucao:
     def _rodar(self):
         c = self.chat
         conta = conta_por_id(c["conta"])
+        if c["agente"] == "claude":
+            try:
+                unir_memorias(c.get("cwd") or str(HOME))
+            except Exception as e:
+                print(f"merging memories failed: {e!r}", flush=True)
         cmd, modo = self.comando()
         texto = self.prompt()
         if modo == "arg":
@@ -1180,6 +1341,33 @@ class Execucao:
             if r.get("conversation_id"):
                 self.chat["sessao"] = r["conversation_id"]
 
+    def troca_automatica(self):
+        """The reply stopped at the account's usage limit: move the chat to the Claude account with the most
+        room left and continue there. Each account is tried once until you send a message yourself."""
+        try:
+            with trava:
+                c = ler_chat(self.chat_id)
+                de = c.get("conta", "")
+                c["tentadas"] = list(dict.fromkeys((c.get("tentadas") or []) + [de]))
+                gravar_chat(c)
+            alvo = conta_livre(c)
+            if not alvo:
+                return False
+            mover_conta(self.chat_id, alvo["id"], atual=self)
+            with trava:
+                c = ler_chat(self.chat_id)
+                if c["mensagens"] and c["mensagens"][-1].get("papel") == "assistente":
+                    c["mensagens"][-1]["troca"] = {"de": de, "para": alvo["id"]}
+                gravar_chat(c)
+            self.msg["troca"] = {"de": de, "para": alvo["id"]}
+            self.emite({"t": "troca", "de": de, "para": alvo["id"]})
+            print(f"chat {self.chat_id} hit the limit on {de}, continuing on {alvo['id']}", flush=True)
+            enviar(self.chat_id, "Continue where you left off.", [], self, auto=True)
+            return True
+        except Exception as e:
+            print(f"automatic account switch failed: {e!r}", flush=True)
+            return False
+
     def parar(self):
         self.parado = True
         if self.proc and self.proc.poll() is None and self.escreve(
@@ -1226,8 +1414,9 @@ class Execucao:
                 renomear = atual.pop("renomear_cli", False)
                 nomear = atual.pop("nomear_depois", False) and not self.msg["erro"] and not self.parado
                 gravar_chat(atual)
+                existe = True
             except FileNotFoundError:
-                renomear = nomear = False
+                renomear = nomear = existe = False
             self.gravado = True
         if renomear and atual.get("sessao") and not atual.get("fork") and conta_por_id(atual.get("conta", "")):
             try:
@@ -1241,6 +1430,9 @@ class Execucao:
                 proxima_fila(self.chat_id, self)
             except Exception:
                 pass
+        elif (existe and not self.parado and self.chat["agente"] == "claude" and CFG["padrao"].get("troca_auto")
+              and LIMITE_RE.search(self.msg["erro"])):
+            self.troca_automatica()
         with self.cond:
             self.acabou = True
             self.eventos.append({"t": "fim", "msg": self.msg})
@@ -1415,7 +1607,7 @@ def limpar_vazios(idade=7 * 86400):
             pass
 
 
-def enviar(cid, texto, anexos_ids, substitui=None):
+def enviar(cid, texto, anexos_ids, substitui=None, auto=False):
     with trava:
         if cid in EXECS and not EXECS[cid].acabou and EXECS[cid] is not substitui:
             raise ValueError("this chat is already running")
@@ -1433,6 +1625,10 @@ def enviar(cid, texto, anexos_ids, substitui=None):
             if a:
                 anexos.append(a)
         msg = {"papel": "usuario", "texto": texto, "anexos": anexos, "ts": time.time()}
+        if auto:
+            msg["auto"] = True
+        else:
+            chat.pop("tentadas", None)   # a message of yours: accounts at their limit may be tried again
         chat["mensagens"].append(msg)
         nomear = False
         if chat["titulo"] in ("New chat", "Novo chat") and (texto.strip() or anexos):
@@ -1520,13 +1716,129 @@ def bifurcar(cid, i):
     return n
 
 
-def mover_conta(cid, destino):
+def _contem(longo, curto):
+    """True when file `longo` starts with the bytes of `curto` (or both are the same link). Transcripts only
+    grow, so this tells which of two copies of a session is the more recent one."""
+    if longo.is_symlink() or curto.is_symlink():
+        return longo.is_symlink() and curto.is_symlink() and os.readlink(longo) == os.readlink(curto)
+    if curto.stat().st_size > longo.stat().st_size:
+        return False
+    with open(longo, "rb") as a, open(curto, "rb") as b:
+        while True:
+            x = b.read(1 << 20)
+            if not x:
+                return True
+            if a.read(len(x)) != x:
+                return False
+
+
+def _arquivos_de(org, dst):
+    """(source, destination) for a file, or for every file under a folder (links are kept as links, and empty
+    folders are listed too, so they get made on the other side)."""
+    if org.is_symlink() or org.is_file():
+        return [(org, dst)]
+    out = []
+    for raiz, pastas, arqs in os.walk(org):
+        r = Path(raiz)
+        for n in arqs + [p for p in pastas if (r / p).is_symlink()]:
+            out.append((r / n, dst / (r / n).relative_to(org)))
+        if not arqs and not pastas:
+            out.append((r, dst / r.relative_to(org)))
+    return out
+
+
+def _cria_pasta(p, desfaz):
+    """mkdir -p that registers how to remove the folders it made, deepest first."""
+    novas = []
+    while not p.exists():
+        novas.append(p)
+        p = p.parent
+    if novas:
+        novas[0].mkdir(parents=True)
+    for n in reversed(novas):
+        desfaz.append(lambda n=n: n.rmdir() if n.is_dir() and not any(n.iterdir()) else None)
+
+
+def _transfere(itens):
+    """Move or copy files as one step: either all of them reach their destination or, on any error, every
+    file is put back the way it was. Returns (undo, cleanup): undo puts everything back (for a failure right
+    after), cleanup lists files to delete once the move is committed. Uses rename on the same disk, so even
+    big sessions move instantly. A destination that already holds a longer copy of the same transcript is
+    kept; a shorter one is replaced; a different one is replaced and kept next to it as .bak."""
+    desfaz, depois = [], []
+
+    def volta():
+        for f in reversed(desfaz):
+            try:
+                f()
+            except OSError as e:
+                print(f"undo step failed: {e!r}", flush=True)
+
+    try:
+        for org, dst, copiar in itens:
+            if org.is_dir() and not org.is_symlink():   # an empty folder
+                _cria_pasta(dst, desfaz)
+                continue
+            if dst.exists() or dst.is_symlink():
+                if _contem(dst, org):
+                    if not copiar:
+                        depois.append(org)
+                    continue
+                diverge = not _contem(org, dst)
+                guarda = dst.with_name(f"{dst.name}.aw-{int(time.time())}.bak" if diverge
+                                       else f".{dst.name}.aw-{secrets.token_hex(4)}")
+                os.rename(dst, guarda)
+
+                def repoe(d=dst, g=guarda):
+                    if d.exists() or d.is_symlink():
+                        d.unlink()
+                    os.rename(g, d)
+                desfaz.append(repoe)
+                if diverge:
+                    print(f"kept the other copy of {dst.name} as {guarda.name}", flush=True)
+                else:
+                    depois.append(guarda)
+            _cria_pasta(dst.parent, desfaz)
+            if not copiar:
+                try:
+                    os.rename(org, dst)
+                    desfaz.append(lambda o=org, d=dst: os.rename(d, o))
+                    continue
+                except OSError as e:
+                    if e.errno != errno.EXDEV:
+                        raise
+                depois.append(org)
+            desfaz.append(lambda d=dst: (d.exists() or d.is_symlink()) and d.unlink())
+            shutil.copy2(org, dst, follow_symlinks=False)
+    except BaseException:
+        volta()
+        raise
+    return volta, depois
+
+
+def _esforco_de(conta, modelo):
+    """The effort level an account's own settings.json uses for a model, if any."""
+    try:
+        d = json.loads((dir_claude(conta) / "settings.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(d, dict):
+        return ""
+    ms = d.get("modelSettings") if isinstance(d.get("modelSettings"), dict) else {}
+    m = ms.get(modelo) or ms.get(re.sub(r"\[.*\]$", "", modelo or ""))
+    e = (m.get("effortLevel") if isinstance(m, dict) else None) or d.get("effortLevel")
+    return e if isinstance(e, str) and e in ("low", "medium", "high", "xhigh", "max") else ""
+
+
+def mover_conta(cid, destino, atual=None):
     """Continue a Claude chat on another Claude account. The CLI keeps a session in the config folder of the
     account that ran it, so its transcript (and the ones of earlier edits) moves along to the new folder,
-    where `--resume` finds it. A session another web chat still uses there is copied instead of moved."""
+    where `--resume` finds it. A session another web chat still uses there is copied instead of moved.
+    All or nothing: if any file cannot move, everything stays on the old account. A chat on the account's
+    default model and effort keeps the ones it was really using, since the other account may default to others."""
     with trava:
         ex = EXECS.get(cid)
-        if ex and not ex.acabou:
+        if ex and not ex.acabou and ex is not atual:
             raise ValueError("stop the current reply first")
         c = ler_chat(cid)
         if c["agente"] != "claude":
@@ -1541,7 +1853,7 @@ def mover_conta(cid, destino):
         if de and sids:
             if dir_claude(de).resolve() == dir_claude(para).resolve():
                 sids = []          # two names for the same login folder: nothing to move
-            elif c.get("sessao") in ativas_claude(de):
+            elif c.get("sessao") in ativas_claude(de) or c.get("sessao") in ativas_claude(para):
                 raise ValueError("this conversation is open in a terminal right now. Close it there first")
         outros = set()
         if de and sids:
@@ -1554,28 +1866,106 @@ def mover_conta(cid, destino):
                     continue
                 if o.get("conta") == de["id"]:
                     outros.update([o.get("sessao") or ""] + list(o.get("antigas") or []))
-        movidos = 0
+        itens, pastas = [], []
         if de and sids:
             a, b = dir_claude(de), dir_claude(para)
             for sid in sids:
-                pares = [(x, b / "projects" / x.parent.name / x.name)
-                         for x in list((a / "projects").glob(f"*/{sid}.jsonl")) + list((a / "projects").glob(f"*/{sid}"))]
-                pares += [(a / d / sid, b / d / sid) for d in ("file-history", "session-env")]
-                for org, dst in pares:
+                raizes = [(x, b / "projects" / x.parent.name / x.name)
+                          for x in list((a / "projects").glob(f"*/{sid}.jsonl")) + list((a / "projects").glob(f"*/{sid}"))]
+                raizes += [(a / d / sid, b / d / sid) for d in ("file-history", "session-env")]
+                for org, dst in raizes:
                     if not org.exists() or org.is_symlink():
                         continue
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    if org.is_dir():
-                        shutil.copytree(org, dst, dirs_exist_ok=True, symlinks=True)
-                    else:
-                        shutil.copy2(org, dst)
-                    if sid not in outros:
-                        _remove(org)
-                    movidos += 1
-        c["conta"] = para["id"]
-        gravar_chat(c)
-        print(f"chat {cid} moved to account {para['id']} ({movidos} session files)", flush=True)
-        return c
+                    if org.is_dir() and sid not in outros:
+                        pastas.append(org)
+                    itens += [(x, y, sid in outros) for x, y in _arquivos_de(org, dst)]
+        try:
+            volta, depois = _transfere(itens)
+        except OSError as e:
+            raise ValueError(f"could not move the conversation files ({e.strerror or e}). Nothing changed, "
+                             f"the chat is still on {(de or {}).get('nome') or 'its account'}")
+        fixou = {}
+        try:
+            if not c.get("modelo"):
+                m = next((x.get("modelo") for x in reversed(c["mensagens"])
+                          if x.get("papel") == "assistente" and x.get("modelo")), "")
+                if m:
+                    c["modelo"] = fixou["modelo"] = m
+            if not c.get("effort") and de and c.get("modelo"):
+                e = _esforco_de(de, c["modelo"])
+                if e:
+                    c["effort"] = fixou["effort"] = e
+            c["conta"] = para["id"]
+            gravar_chat(c)
+        except BaseException:
+            volta()
+            raise
+        for p in depois:
+            try:
+                _remove(p)
+            except OSError as e:
+                print(f"could not remove {p}: {e!r}", flush=True)
+        for p in pastas:   # folders emptied by the move
+            for raiz, _, _ in sorted(os.walk(p, topdown=False), key=lambda t: -len(t[0])):
+                try:
+                    os.rmdir(raiz)
+                except OSError:
+                    pass
+        print(f"chat {cid} moved to account {para['id']} ({len(itens)} session files)", flush=True)
+        return {**c, "fixado": fixou} if fixou else c
+
+
+LIMITE_RE = re.compile(r"hit your .*limit|usage limit|out of (extra )?usage", re.I)
+
+
+def _bloqueada(cid):
+    """The last reply on this account was refused for its limit, and that limit has not reset yet."""
+    l = LIMITES.get(cid) or {}
+    inf = l.get("info") or {}
+    if inf.get("status") != "rejected":
+        return False
+    return (inf["resetsAt"] > time.time()) if inf.get("resetsAt") else (l.get("quando") or 0) > time.time() - 5 * 3600
+
+
+def conta_livre(chat):
+    """For a chat that hit its limit: the other Claude account with the most room left, skipping the ones this
+    chat already hit the limit on since your last message. None when there is no such account."""
+    atual = conta_por_id(chat.get("conta", ""))
+    tentadas = set(chat.get("tentadas") or [])
+    contas = []
+    for c in CFG["contas"]:
+        if c["agente"] != "claude" or c["id"] == chat.get("conta") or c["id"] in tentadas or _bloqueada(c["id"]):
+            continue
+        if atual and dir_claude(c).resolve() == dir_claude(atual).resolve():
+            continue
+        contas.append(c)
+    if not contas:
+        return None
+    # one usage lookup per account, side by side, so a slow endpoint costs one timeout and not one per account
+    res = {}
+
+    def busca(c):
+        try:
+            res[c["id"]] = _em_cache("lim:" + c["id"], 90, False, lambda: limites_claude(c)) or {}
+        except Exception:
+            res[c["id"]] = {}
+    fios = [threading.Thread(target=busca, args=(c,), daemon=True) for c in contas]
+    for f in fios:
+        f.start()
+    fim = time.time() + 20
+    for f in fios:
+        f.join(max(0, fim - time.time()))
+    cands = []
+    for c in contas:
+        lim = res.get(c["id"]) or {}
+        if lim.get("erro") == "Not signed in" and not lim.get("linhas"):
+            continue
+        usos = [0 if (l.get("reinicia") or 0) and l["reinicia"] < time.time() else (l.get("usado") or 0)
+                for l in lim.get("linhas") or [] if l.get("janela") == "5h" or "All models" in (l.get("nome") or "")]
+        if usos and max(usos) >= 100:
+            continue
+        cands.append((max(usos) if usos else 50, len(cands), c))
+    return min(cands)[2] if cands else None
 
 
 def proxima_fila(cid, atual):
@@ -2892,6 +3282,7 @@ class H(http.server.BaseHTTPRequestHandler):
                                    "home": str(HOME), "tls": bool(TLS["ctx"]), "seguro": self.tls,
                                    "pedidos": pk_pendentes(), "root": PK["ok"], "fixados": CFG.get("fixados") or [],
                                    "prompts": CFG.get("prompts") or [],
+                                   "principal": (conta_principal() or {}).get("id", ""),
                                    "https": f"https://{(self.headers.get('Host') or '').rsplit(':', 1)[0]}:{PORTA}/"})
         if partes == ["busca"]:
             return self.resp(200, buscar(self.q.get("q", [""])[0]))
@@ -2957,10 +3348,12 @@ class H(http.server.BaseHTTPRequestHandler):
         if partes == ["preferencias"] and metodo == "POST":
             d = self.corpo_json()
             with trava:
-                for k in ("dica", "root", "titulos"):
+                for k in ("dica", "root", "titulos", "troca_auto", "memoria_unica"):
                     if k in d:
                         CFG["padrao"][k] = bool(d[k])
                 salvar_json(CFG_FILE, CFG)
+            if d.get("memoria_unica"):
+                threading.Thread(target=unir_memorias, daemon=True).start()
             return self.resp(200, CFG["padrao"])
         if partes == ["celular", "passe"] and metodo == "POST":
             if self.quem != "dispositivo":
@@ -3255,6 +3648,7 @@ if __name__ == "__main__":
         threading.Thread(target=pk_servidor, daemon=True).start()
     threading.Thread(target=lambda: lista_cli(), daemon=True).start()
     threading.Thread(target=limpar_vazios, daemon=True).start()
+    threading.Thread(target=unir_memorias, daemon=True).start()
     srv = Servidor(("0.0.0.0", PORTA), H)
     print(f"Agents Web {VERSAO} on http://127.0.0.1:{PORTA}", flush=True)
     srv.serve_forever()

@@ -14,7 +14,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 ## Features
 
 - **Both agents, one page.** Switch between Claude Code and Antigravity per chat, each with its own theme.
-- **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices. When one account reaches its usage limit, the chat offers to continue the same conversation on another one.
+- **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices. When one account reaches its usage limit, the chat continues the same conversation on another one, with one click or by itself. All accounts share one Claude memory.
 - **Real usage limits.** Shows session and weekly limits as reported by the CLIs themselves, plus tokens per model.
 - **Terminal conversations.** Your existing `claude` and `agy` sessions show up in the sidebar. You can open, continue, rename or delete them, and a Claude chat can move to another working folder.
 - **Rich replies.** Markdown with tables, live previews of `html` and `svg` blocks in a sandboxed frame that follows the page theme, and inline images, videos, audio and PDFs for absolute file paths the agent mentions.
@@ -106,6 +106,21 @@ reply stops because the account reached its usage limit, a card under it offers 
 for each other Claude account, with how much of its 5-hour limit is used, and continues the conversation
 there with one click. Antigravity conversations stay with their account.
 
+A move takes the whole conversation along (every branch made by Edit and Fork, the subagents, the file
+history) and is all or nothing: if a file cannot be moved, nothing changes and the chat stays where it was.
+A chat that used the account's default model or effort keeps the same ones on the new account.
+
+With two or more Claude accounts, Settings has a **Claude accounts** section:
+
+- **Switch account at the limit** (off by default). When a reply stops at the usage limit, the chat moves to
+  the Claude account with the most room left and sends "Continue where you left off." for you. The reply
+  shows a note about the switch. It stops when every account is at its limit.
+- **One memory for all accounts** (on by default). Claude Code keeps its memory (`/memory`, the notes Claude
+  saves about you and your projects) per login. With this on, every Claude account uses the memory of the main
+  account (the first one) for the same project, so what Claude learned on one account is there on the
+  others. The memories the other accounts had before are merged in once, and the old index is kept in
+  `~/.local/share/agents-web/memory-backups/`.
+
 ### Permissions
 
 New chats start in **Full access** (`--permission-mode bypassPermissions` for Claude, `--dangerously-skip-permissions`
@@ -140,8 +155,8 @@ in the page moves to the new branch, and the original conversation stays in Clau
 Settings covers the appearance (Dark, Light or System theme, chat width, text size, the chat list and animations),
 saved prompts, the alert when a reply is ready (chime, vibration and notification), the dictation language,
 **Rich replies** (a short hint that tells agents about the previews, about 250 tokens),
-**Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog) and
-**Updates** (see below).
+**Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog),
+**Claude accounts** (see Accounts) and **Updates** (see below).
 
 ### Keyboard
 
@@ -224,6 +239,15 @@ python3 -m unittest discover -s tests -v
 ```
 
 GitHub Actions runs them on every push, together with a build of the tray icon and `shellcheck`.
+
+`tests/e2e_contas.py` checks account moves and the shared memory with the real `claude` CLI and two of your
+own Claude accounts. It starts its own server with temporary data and cleans up the sessions it made, but it
+spends about 15 short Claude Haiku replies, so it is not part of the unit tests:
+
+```bash
+python3 tests/e2e_contas.py            # the first two Claude accounts
+python3 tests/e2e_contas.py claude1 claude2
+```
 
 ## License
 

@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.8.0 (2026-11-15)
+
+New
+
+- **Switch account at the limit.** Settings, Claude accounts. When a reply stops because the account reached its
+  usage limit, the chat moves by itself to the Claude account with the most room left and goes on with
+  "Continue where you left off.". The reply shows a note ("EmpresaGabriel reached its limit, so the chat moved
+  to Kxinha") and the message sent for you is tagged "automatic". It stops when every account is at its limit.
+  Off by default; the limit card has a "Switch by itself next time" button to turn it on.
+- **One memory for all accounts.** Claude Code keeps its memory per login, so a chat on a second account did not
+  see what Claude learned on the first one. Now every Claude account reads and writes the memory of the main
+  account (the first one, your `~/.claude`) for the same project. The memories the other accounts already had
+  are merged in once, with a backup of the old index. On by default; Settings, Claude accounts, turns it off.
+- **Model and effort stay the same after a move.** A chat that used the account's default model or effort gets
+  them pinned when it changes account, so it does not suddenly run on the other account's defaults. The toast
+  says what was kept.
+- **A better limit card.** It reads fresh usage for each account, puts the accounts with the most room first,
+  marks the ones that are full and says how big the conversation is (the next account reads all of it again).
+- `tests/e2e_contas.py`: an end to end check of account moves with the real `claude` CLI and two of your own
+  accounts (round trip, tool calls, an edited branch, a fork, `claude --resume` in a terminal and the shared
+  memory). Run it by hand; it costs about 15 short Haiku replies.
+
+Fixes
+
+- Moving a chat to another account is now all or nothing. Before, an error halfway (a full disk, a permission
+  problem) could leave part of the session on each account. Now every file is moved or nothing is, and the
+  chat says the move failed and stays where it was.
+- "Continue on <account>" replaced the text you were typing with "Continue where you left off.". Now it sends
+  that line and leaves your draft and attachments alone.
+- The limit card used the limits saved at the end of the last reply, which could be hours old. Now it uses the
+  same fresh numbers as the Usage panel.
+- The limit card had no inner padding, because a rule of the Usage panel matched it too.
+- A model pinned after a move showed its raw id in the Model chip.
+- `POST /api/chats/<id>/conta` answers 400 with a clear message instead of 500 when the move fails, and returns
+  `fixado` with the model and effort it pinned.
+
 ## 1.7.0 (2026-11-15)
 
 New

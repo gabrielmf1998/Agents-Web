@@ -9,6 +9,7 @@ that speaks the stream-json protocol. Nothing touches your real chats, logins or
 import http.client
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -45,6 +46,7 @@ FAKE_CLAUDE = textwrap.dedent(f"""\
             print(json.dumps({{"type": "result", "is_error": False, "result": '"Fake title."'}}))
         sys.exit(0)
     log("claude-args.jsonl", args)
+    log("claude-env.jsonl", {{"conta": os.environ.get("CLAUDE_CONFIG_DIR", "")}})
     if args[:2] == ["auth", "status"]:
         print(json.dumps({{"loggedIn": True, "email": "test@example.invalid", "subscriptionType": "pro"}}))
         sys.exit(0)
@@ -85,6 +87,14 @@ FAKE_CLAUDE = textwrap.dedent(f"""\
         n = len(f.read().splitlines())
     out({{"type": "system", "subtype": "init", "session_id": "{SID}", "model": "claude-fake-1",
          "permissionMode": "bypassPermissions"}})
+    if os.path.exists((os.environ.get("CLAUDE_CONFIG_DIR") or H + "/.claude") + "/limitado"):
+        # an account at its usage limit, as the real CLI reports it
+        out({{"type": "rate_limit_event", "rate_limit_info": {{"status": "rejected", "rateLimitType": "five_hour",
+             "resetsAt": int(time.time()) + 3600}}}})
+        out({{"type": "result", "subtype": "success", "is_error": True, "session_id": "{SID}",
+             "result": "You've hit your 5-hour limit · resets 5am (UTC)"}})
+        ate_fechar()
+        sys.exit(0)
     if "slow" in prompt:
         time.sleep(1.5)
     if "hang" in prompt:
@@ -255,6 +265,15 @@ class Servidor:
     def args_claude(self):
         p = self.home / "claude-args.jsonl"
         return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
+
+    def execucoes(self):
+        """(argv, CLAUDE_CONFIG_DIR) of every chat run of the fake CLI, oldest first."""
+        p = self.home / "claude-env.jsonl"
+        envs = [json.loads(l)["conta"] for l in p.read_text().splitlines()] if p.exists() else []
+        return [(a, e) for a, e in zip(self.args_claude(), envs) if a[:2] != ["auth", "status"]]
+
+    def dir_conta(self, cid):
+        return self.home / ".claude" if cid == "claude1" else self.home / ".config/agents-web/contas" / cid
 
     def parar(self):
         self.proc.terminate()
@@ -689,6 +708,192 @@ class TestServidor(unittest.TestCase):
         # Antigravity chats and unknown accounts are refused
         st, b, _ = self.s.pedir("POST", f"/api/chats/{c['id']}/conta", {"conta": "nope"}, {"X-Token": self.s.token})
         self.assertEqual(st, 400)
+
+    def test_mover_tudo_ou_nada(self):
+        seg = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Atomic"})
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(c["id"])
+        atual, velha = "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"
+        arq = self.s.home / ".local/share/agents-web/chats" / f"{c['id']}.json"
+        d = json.loads(arq.read_text())
+        d["sessao"], d["antigas"] = atual, [velha]
+        arq.write_text(json.dumps(d))
+        A, B = self.s.dir_conta("claude1"), self.s.dir_conta(seg["id"])
+        for sid in (atual, velha):
+            (A / "projects/-tmp-at").mkdir(parents=True, exist_ok=True)
+            (A / "projects/-tmp-at" / f"{sid}.jsonl").write_text('{"a":1}\n')
+        (A / "file-history" / velha).mkdir(parents=True)
+        (A / "file-history" / velha / "f@v1").write_text("x")
+        B.mkdir(parents=True, exist_ok=True)
+        (B / "file-history").write_text("in the way")      # the older branch cannot be copied
+        st, corpo, _ = self.s.pedir("POST", f"/api/chats/{c['id']}/conta", {"conta": seg["id"]}, {"X-Token": self.s.token})
+        self.assertEqual(st, 400)
+        self.assertIn("Nothing changed", json.loads(corpo)["erro"])
+        self.assertEqual(self.s.api(f"/api/chats/{c['id']}")["conta"], "claude1")
+        self.assertTrue((A / "projects/-tmp-at" / f"{atual}.jsonl").exists())
+        self.assertTrue((A / "file-history" / velha / "f@v1").exists())
+        self.assertFalse((B / "projects").exists())     # nothing left behind on the other account
+        # with the obstacle gone, and copies already on the other account: a longer one is kept, a shorter
+        # one is replaced, a different one is replaced and kept as .bak
+        (B / "file-history").unlink()
+        (B / "projects/-tmp-at").mkdir(parents=True)
+        (B / "projects/-tmp-at" / f"{atual}.jsonl").write_text('{"a":1}\n{"b":2}\n')
+        (B / "file-history" / velha).mkdir(parents=True)
+        (B / "file-history" / velha / "f@v1").write_text("other")
+        r = self.s.api(f"/api/chats/{c['id']}/conta", {"conta": seg["id"]})
+        self.assertEqual(r["conta"], seg["id"])
+        self.assertEqual((B / "projects/-tmp-at" / f"{atual}.jsonl").read_text(), '{"a":1}\n{"b":2}\n')
+        self.assertEqual((B / "projects/-tmp-at" / f"{velha}.jsonl").read_text(), '{"a":1}\n')
+        self.assertEqual((B / "file-history" / velha / "f@v1").read_text(), "x")
+        self.assertEqual([p.read_text() for p in (B / "file-history" / velha).glob("f@v1.aw-*.bak")], ["other"])
+        self.assertFalse((A / "projects/-tmp-at" / f"{atual}.jsonl").exists())
+        self.assertFalse((A / "file-history" / velha).exists())
+        self.assertEqual([p.name for p in (B / "projects/-tmp-at").iterdir() if p.name.startswith(".")], [])
+
+    def test_mover_mantem_modelo_e_esforco(self):
+        seg = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Pinned"})
+        A = self.s.dir_conta("claude1")
+        A.mkdir(parents=True, exist_ok=True)
+        (A / "settings.json").write_text(json.dumps({"modelSettings": {"claude-fake-1": {"effortLevel": "xhigh"}}}))
+        try:
+            c = self.novo_chat()
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hi"})
+            self.s.espera_parado(c["id"])
+            r = self.s.api(f"/api/chats/{c['id']}/conta", {"conta": seg["id"]})
+            self.assertEqual(r["fixado"], {"modelo": "claude-fake-1", "effort": "xhigh"})
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "go on"})
+            self.s.espera_parado(c["id"])
+            a, conta = self.s.execucoes()[-1]
+            self.assertEqual(a[a.index("--model") + 1], "claude-fake-1")
+            self.assertEqual(a[a.index("--effort") + 1], "xhigh")
+            self.assertEqual(conta, str(self.s.dir_conta(seg["id"])))
+            # a chat with its own model and effort is left alone
+            c2 = self.novo_chat(modelo="opus", effort="low")
+            self.s.api(f"/api/chats/{c2['id']}/enviar", {"texto": "hi"})
+            self.s.espera_parado(c2["id"])
+            r = self.s.api(f"/api/chats/{c2['id']}/conta", {"conta": seg["id"]})
+            self.assertNotIn("fixado", r)
+            self.assertEqual((r["modelo"], r["effort"]), ("opus", "low"))
+        finally:
+            (A / "settings.json").unlink()
+
+    def test_memoria_unica(self):
+        seg = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Memory"})
+        A, B = self.s.dir_conta("claude1"), self.s.dir_conta(seg["id"])
+        repo = self.s.tmp / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / "sub").mkdir()
+        nome = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(repo))
+        # what the other account remembered on its own, and a file the main account has with other content
+        (B / "projects" / nome / "memory").mkdir(parents=True)
+        (B / "projects" / nome / "memory/MEMORY.md").write_text("Rules\n- [Tabs](tabs.md) - use tabs\n- [Style](style.md) - x\n")
+        (B / "projects" / nome / "memory/tabs.md").write_text("tabs")
+        (B / "projects" / nome / "memory/style.md").write_text("style B")
+        (A / "projects" / nome / "memory").mkdir(parents=True)
+        (A / "projects" / nome / "memory/MEMORY.md").write_text("- [Style](style.md) - main\n")
+        (A / "projects" / nome / "memory/style.md").write_text("style A")
+        c = self.s.api("/api/chats", {"agente": "claude", "conta": seg["id"], "cwd": str(repo / "sub")})
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(c["id"])
+        a, _ = self.s.execucoes()[-1]
+        ajuste = json.loads(a[a.index("--settings") + 1])
+        self.assertEqual(ajuste, {"autoMemoryDirectory": str(A / "projects" / nome / "memory")})
+        m = A / "projects" / nome / "memory"
+        self.assertEqual((m / "tabs.md").read_text(), "tabs")
+        self.assertEqual((m / "style.md").read_text(), "style A")
+        self.assertEqual((m / f"style-{seg['id']}.md").read_text(), "style B")
+        idx = (m / "MEMORY.md").read_text()
+        self.assertIn("- [Tabs](tabs.md) - use tabs", idx)
+        self.assertIn(f"- [Style](style-{seg['id']}.md) - x", idx)
+        self.assertIn("- [Style](style.md) - main", idx)
+        self.assertTrue((B / "projects" / nome / "memory/tabs.md").exists())   # the originals stay
+        # merged once: later runs add nothing twice
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "again"})
+        self.s.espera_parado(c["id"])
+        self.assertEqual((m / "MEMORY.md").read_text(), idx)
+        # a linked git worktree shares the memory of its main checkout
+        wt = self.s.tmp / "wt"
+        wt.mkdir()
+        (wt / ".git").write_text(f"gitdir: {repo}/.git/worktrees/wt\n")
+        c2 = self.s.api("/api/chats", {"agente": "claude", "conta": seg["id"], "cwd": str(wt)})
+        self.s.api(f"/api/chats/{c2['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(c2["id"])
+        a, _ = self.s.execucoes()[-1]
+        self.assertEqual(json.loads(a[a.index("--settings") + 1])["autoMemoryDirectory"], str(m))
+        # the main account uses its own folder, which is the shared one
+        c3 = self.s.api("/api/chats", {"agente": "claude", "conta": "claude1", "cwd": str(repo)})
+        self.s.api(f"/api/chats/{c3['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(c3["id"])
+        self.assertNotIn("--settings", self.s.execucoes()[-1][0])
+        # turned off: each account keeps its own memory
+        self.s.api("/api/preferencias", {"memoria_unica": False})
+        try:
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hi"})
+            self.s.espera_parado(c["id"])
+            self.assertNotIn("--settings", self.s.execucoes()[-1][0])
+        finally:
+            self.s.api("/api/preferencias", {"memoria_unica": True})
+
+    def test_troca_automatica_no_limite(self):
+        fora = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Signed out"})
+        reserva = self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Spare"})
+        claudes = [x["id"] for x in self.s.api("/api/estado")["contas"] if x["agente"] == "claude"]
+        limitado = lambda cid: self.s.dir_conta(cid) / "limitado"
+        login = lambda cid: self.s.dir_conta(cid) / ".credentials.json"
+        for cid in claudes:
+            if cid != fora["id"]:
+                # signed in, with an expired token so the usage lookup stays offline
+                self.s.dir_conta(cid).mkdir(parents=True, exist_ok=True)
+                login(cid).write_text(json.dumps({"claudeAiOauth": {"accessToken": "x", "expiresAt": 1000}}))
+        limitado("claude1").write_text("")
+        try:
+            # off: the reply ends with the limit error and the chat stays where it was
+            c = self.novo_chat()
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "work"})
+            c = self.s.espera_parado(c["id"])
+            self.assertEqual(c["conta"], "claude1")
+            self.assertIn("5-hour limit", c["mensagens"][-1]["erro"])
+            # on: it moves to a free account and goes on by itself
+            self.s.api("/api/preferencias", {"troca_auto": True})
+            for cid in claudes:      # only the spare account has room left (and one that is signed out)
+                if cid not in ("claude1", reserva["id"], fora["id"]):
+                    self.s.dir_conta(cid).mkdir(parents=True, exist_ok=True)
+                    limitado(cid).write_text("")
+            c = self.novo_chat()
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "work"})
+            time.sleep(0.3)
+            c = self.s.espera_parado(c["id"])
+            self.assertEqual(c["conta"], reserva["id"])
+            ms = c["mensagens"]
+            # accounts that turn out to be at their limit too are each tried once on the way
+            trocas = [m["troca"] for m in ms if m.get("troca")]
+            self.assertEqual(trocas[0]["de"], "claude1")
+            self.assertEqual(trocas[-1]["para"], reserva["id"])
+            self.assertEqual(len({t["de"] for t in trocas}), len(trocas))
+            self.assertNotIn(fora["id"], [t["para"] for t in trocas])
+            self.assertTrue(all(m.get("auto") for m in ms[2::2]))
+            self.assertEqual(ms[-2]["texto"], "Continue where you left off.")
+            self.assertEqual(ms[-1]["texto"], "echo: Continue where you left off.")
+            self.assertFalse(ms[-1].get("erro"))
+            self.assertEqual(self.s.execucoes()[-1][1], str(self.s.dir_conta(reserva["id"])))
+            # every account at its limit: each one is tried once, then it stops with the error
+            limitado(reserva["id"]).write_text("")
+            antes = len(self.s.execucoes())
+            self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "more"})
+            time.sleep(0.3)
+            fim = time.time() + 30
+            while self.s.api(f"/api/chats/{c['id']}")["rodando"] and time.time() < fim:
+                time.sleep(0.2)
+            c = self.s.api(f"/api/chats/{c['id']}")
+            self.assertFalse(c["rodando"])
+            self.assertIn("5-hour limit", c["mensagens"][-1]["erro"])
+            self.assertLessEqual(len(self.s.execucoes()) - antes, len(claudes))
+        finally:
+            self.s.api("/api/preferencias", {"troca_auto": False})
+            for cid in claudes:
+                limitado(cid).unlink(missing_ok=True)
+                login(cid).unlink(missing_ok=True)
 
     def test_manifesto_e_icones(self):
         st, b, cab = self.s.pedir("GET", "/manifest.webmanifest")

@@ -282,6 +282,12 @@ body[data-tema=claude] .m.a .corpo{font-size:calc(15.5px*var(--fs));line-height:
 .m.a>.pks{margin-left:30px}.pks:empty{display:none}
 .pk{border:1px solid rgba(232,198,106,.4);background:rgba(232,198,106,.06);border-radius:12px;padding:12px 14px;margin:6px 0 10px}
 .pk .t{display:flex;gap:8px;align-items:center;font-weight:600;color:var(--am);font-size:13.5px}
+.troca-n{display:flex;gap:8px;align-items:center;margin:6px 0 10px 30px;padding:8px 11px;border-radius:9px;border:1px solid var(--bd);background:var(--p1);color:var(--mu);font-size:12.5px}
+.troca-n svg{color:var(--acs);flex:none}
+.troca-n b{color:var(--tx);font-weight:600}
+.cab-m .auto{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--p3);color:var(--mu)}
+.pk.lim .ctx{display:block;margin-top:8px;color:var(--mu)}
+.pk.lim .auto-l{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--mu);font-size:12px}
 .pk .cmd{font:12.5px var(--mono);background:var(--p2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin:8px 0;white-space:pre-wrap;word-break:break-all;color:var(--tx)}
 .pk .f{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.pk .f input{flex:1;min-width:150px;height:34px}
 .pk small{display:block;color:var(--mu);font-size:11.5px;margin-top:8px;line-height:1.45}
@@ -428,8 +434,8 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .uso-cart .topo .t{flex:1;min-width:0}
 .uso-cart .topo b{font-size:14px}
 .uso-cart .topo small{display:block;color:var(--mu);font-size:11.5px}
-.lim{padding:8px 0;border-top:1px solid var(--bd)}
-.lim:first-of-type{border-top:0}
+.lim:not(.pk){padding:8px 0;border-top:1px solid var(--bd)}
+.lim:not(.pk):first-of-type{border-top:0}
 .lim .l1{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
 .lim .l1 b{font-weight:600}
 .lim .l1 .v{font:600 13px var(--mono)}
@@ -483,7 +489,7 @@ table.tb tr.tot td{font-weight:700;border-bottom:0}
  #agSeg button span{display:none}
  #msgs{padding:14px 12px 30px}
  .m.a .corpo{padding-left:0}
- .m.a>details,.m.a>.think,.m.a>.meta,.m.a>.erro,.m.a>.ferrs,.skel{margin-left:0}
+ .m.a>details,.m.a>.think,.m.a>.meta,.m.a>.erro,.m.a>.ferrs,.skel,.troca-n{margin-left:0}
  .m.u .corpo{max-width:92%}
  .sugs{grid-template-columns:1fr}
  .vazio{margin-top:6vh}
@@ -1326,7 +1332,7 @@ function semChat(){
 function chipSel(icone,titulo,lista,val,onch,desab){
  const s=el("select",{title:titulo});let tem=false;
  for(const[v,n]of lista){s.append(el("option",{value:v},n));if(v===val)tem=true}
- if(!tem&&val)s.append(el("option",{value:val},val));
+ if(!tem&&val)s.append(el("option",{value:val},titulo==="Model"?nomeModelo(val):val));
  s.value=val||"";s.disabled=!!desab;s.onchange=e=>onch(e.target.value);
  const c=el("label",{class:"chip-sel",title:titulo});c.innerHTML=ic(icone,14);c.append(s);c.insertAdjacentHTML("beforeend",`<svg class="i chev" viewBox="0 0 24 24"><path d="${P.chev}"/></svg>`);return c;
 }
@@ -1354,8 +1360,10 @@ async function mudarConta(v){
  if(!CHAT||v===CHAT.conta)return;
  if(!CHAT.sessao)return salvarCfg("conta",v);
  if(!confirm(`Continue this conversation on ${contaNome(v)}? Its Claude session moves to that account, and the next message runs there.`)){desenharCab();return}
- try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/conta`,{conta:v}));desenharCab();desenharMsgs();carregarEstado();toast("Now on "+contaNome(v))}catch(e){toast(cap(e.message));desenharCab()}
+ try{const r=await api(`/api/chats/${CHAT.id}/conta`,{conta:v});CHAT=Object.assign(CHAT,r);desenharCab();desenharMsgs();carregarEstado();toast(movido(v,r.fixado))}catch(e){toast(cap(e.message));desenharCab()}
 }
+/* the other account may default to another model or effort: the server pins the ones the chat was using */
+const movido=(v,f)=>"Now on "+contaNome(v)+(f&&(f.modelo||f.effort)?" · keeps "+[f.modelo&&nomeModelo(f.modelo),f.effort&&f.effort+" effort"].filter(Boolean).join(", "):"");
 async function salvarCfg(campo,valor){if(!CHAT)return;try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/config`,{[campo]:valor}));desenharCab();carregarEstado()}catch(e){toast(cap(e.message))}}
 $("#titulo").onchange=e=>salvarCfg("titulo",e.target.value.trim()||"New chat");
 [...$("#agSeg").children].forEach(b=>b.onclick=async()=>{
@@ -1406,7 +1414,7 @@ async function acaoFila(i,acao){
 function podeVoltar(i){if(!CHAT||CHAT.agente!=="claude")return false;if(i===0)return true;const a=CHAT.mensagens[i-1];return!!(a&&a.papel==="assistente"&&a.uuid&&CHAT.sessao)}
 function blocoUsuario(m,i){
  const tx=m.texto||"",cp=el("div",{class:"corpo"},tx);
- const b=el("div",{class:"m u"},el("div",{class:"cab-m"},el("span",{},m.ts?quando(m.ts):""),el("b",{},"You")),cp);
+ const b=el("div",{class:"m u"},el("div",{class:"cab-m"},m.auto?el("span",{class:"auto",title:"Sent by Agents after the account switch"},"automatic"):null,el("span",{},m.ts?quando(m.ts):""),el("b",{},"You")),cp);
  if(tx.split("\n").length>14||tx.length>1400){cp.classList.add("longo");const mb=el("button",{class:"btn ghost sm mais-txt"},"Show more");mb.onclick=()=>{mb.textContent=cp.classList.toggle("longo")?"Show more":"Show less"};b.append(mb)}
  if(m.anexos&&m.anexos.length)b.append(listaAnexos(m.anexos));
  const ac=el("div",{class:"acoes-m"});
@@ -1621,26 +1629,32 @@ function pkAlerta(p,id,titulo){
 }
 const LIMRE=/hit your .*limit|usage limit|limit reached|out of (extra )?usage/i;
 function estadoConta(id){
- const l=EST.limites[id];if(!l)return{p:null,bloq:false};
- const inf=l.info||{},w=janelas(inf)[0];
- return{p:w?w.p:null,bloq:inf.status==="rejected"&&(!inf.resetsAt||inf.resetsAt*1000>Date.now())};
+ const c=EST.contas.find(x=>x.id===id),l=EST.limites[id],inf=(l&&l.info)||{};
+ const ls=c?resumoConta(c).ls.map(x=>x.z&&x.z*1000<Date.now()?0:x.p||0):[];
+ const p=ls.length?Math.max(...ls):null;
+ return{p,bloq:(inf.status==="rejected"&&(!inf.resetsAt||inf.resetsAt*1000>Date.now()))||(p!=null&&p>=100)};
 }
 function cartaoLimite(){
  const k=el("div",{class:"pk lim"}),outras=EST.contas.filter(x=>x.agente==="claude"&&x.id!==CHAT.conta);
  const t=el("div",{class:"t"});t.innerHTML=ic("clock",15)+esc(contaNome(CHAT.conta)+" reached its usage limit");k.append(t);
  if(!outras.length){k.append(el("small",{},"Add another Claude account in Accounts to continue this chat there, or wait for the limit to reset."));return k}
  const f=el("div",{class:"f"});
- for(const o of outras.sort((a,b)=>estadoConta(a.id).bloq-estadoConta(b.id).bloq)){
+ for(const o of outras.sort((a,b)=>{const x=estadoConta(a.id),y=estadoConta(b.id);return x.bloq-y.bloq||(x.p??50)-(y.p??50)})){
   const e=estadoConta(o.id),b=el("button",{class:"btn"+(e.bloq?"":" pri")});
   b.innerHTML=ic("user",14)+esc("Continue on "+o.nome+(e.bloq?" (also limited)":e.p!=null?` (${e.p}% used)`:""));
   b.onclick=()=>continuarEm(o.id,b);f.append(b)}
  k.append(f,el("small",{},"The whole conversation moves to that account and Claude picks up where it stopped. The Account chip in the header moves it back."));
+ const u=[...CHAT.mensagens].reverse().find(m=>m.papel==="assistente"&&m.contexto&&m.contexto.usado);
+ if(u&&u.contexto.usado>20000)k.append(el("small",{class:"ctx"},`This chat carries about ${Math.round(u.contexto.usado/1000)}k tokens of context. The other account has no cache of it yet, so its first reply reads all of it.`));
+ if(!EST.padrao.troca_auto){const a=el("button",{class:"btn sm"},"Switch by itself next time");
+  a.onclick=async()=>{try{EST.padrao=await api("/api/preferencias",{troca_auto:true});a.replaceWith(el("span",{},"On. Change it in Settings, Claude accounts."))}catch(e){toast(cap(e.message))}};
+  k.append(el("div",{class:"auto-l"},el("span",{},"Chats can move to the freest account on their own."),a))}
  return k;
 }
 async function continuarEm(id,b){
  if(b)b.disabled=true;
- try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/conta`,{conta:id}));desenharCab();carregarEstado();
-  $("#txt").value="Continue where you left off.";ajusta();await enviar()}
+ try{const r=await api(`/api/chats/${CHAT.id}/conta`,{conta:id});CHAT=Object.assign(CHAT,r);desenharCab();carregarEstado();toast(movido(id,r.fixado));
+  await enviar("Continue where you left off.")}   // sent as is: what you were typing stays in the box
  catch(e){toast(cap(e.message));if(b)b.disabled=false}
 }
 function blocoAssist(m,i){
@@ -1652,6 +1666,7 @@ function blocoAssist(m,i){
  if(m.texto){const c=el("div",{class:"corpo",html:md(m.texto)});b.append(c);enriquecer(c)}
  if(m.negadas&&m.negadas.length)b.append(el("div",{class:"erro"},"Permission denied for: "+m.negadas.join(", ")+". Change the permission mode in the header."));
  if(m.erro)b.append(el("div",{class:"erro"},cap(m.erro)));
+ if(m.troca)b.append(el("div",{class:"troca-n",html:ic("user",14)+`<span>${esc(contaNome(m.troca.de))} reached its limit, so the chat moved to <b>${esc(contaNome(m.troca.para))}</b> and went on by itself.</span>`}));
  if(m.erro&&i!=null&&i===CHAT.mensagens.length-1&&CHAT.agente==="claude"&&LIMRE.test(m.erro))b.append(cartaoLimite());
  const meta=m.importada?null:metaMsg(m,m.texto);
  if(i!=null&&CHAT.agente==="claude"&&m.uuid&&CHAT.sessao){const bf=el("button",{class:"btn ghost txt",title:"A new chat that continues from this reply, leaving this one as it is"});bf.innerHTML=ic("branch",13)+"Fork";bf.onclick=()=>bifurcarMsg(i);
@@ -1725,12 +1740,13 @@ function escutar(desde){
    case"sistema":if(ev.modelo){modelo.textContent=nomeModelo(ev.modelo);modelo.hidden=false}break;
    case"sub":VIVO.status="Subagent: "+ev.s;break;
    case"titulo":if(CHAT&&CHAT.id===id){CHAT.titulo=ev.titulo;if(document.activeElement!==$("#titulo"))$("#titulo").value=ev.titulo}{const x=EST.chats.find(y=>y.id===id);if(x){x.titulo=ev.titulo;desenharLista()}}break;
+   case"troca":toast(`${contaNome(ev.de)} reached its limit · going on with ${contaNome(ev.para)}`);break;
    case"limite":EST.limites[ev.conta]={info:ev.info,quando:ev.quando};desenharUso();break;
    case"erro":b.append(el("div",{class:"erro"},cap(ev.s)));break;
    case"pedido":{comecou();const novo=cartaoPk(ev),v=pks.querySelector(`[data-pk="${CSS.escape(ev.id)}"]`);if(v)v.replaceWith(novo);else pks.append(novo);
     VIVO.espera=VIVO.espera||{};
     if(ev.estado==="pendente"){VIVO.espera[ev.id]=PKESPERA[ev.tipo]||PKESPERA.root;pkAlerta(ev,id,CHAT&&CHAT.titulo);rolar(true)}else{delete VIVO.espera[ev.id];PKVISTOS.add(ev.id)}break}
-   case"fim":{ES.close();ES=null;VIVO=null;pararSpin();rodando(false);const x=EST.chats.find(y=>y.id===id);if(x)x.rodando=false;const fm=ev.msg||{};avisar(id,CHAT&&CHAT.titulo,fm.texto,!!fm.erro);abrir(id,true);carregarEstado();carregarUso(conta);break}
+   case"fim":{ES.close();ES=null;VIVO=null;pararSpin();rodando(false);const x=EST.chats.find(y=>y.id===id);if(x)x.rodando=false;const fm=ev.msg||{};if(!fm.troca)avisar(id,CHAT&&CHAT.titulo,fm.texto,!!fm.erro);abrir(id,true);carregarEstado();carregarUso(conta);break}
   }
  };
  ES.onerror=()=>{if(ES&&ES.readyState===2){ES=null;setTimeout(()=>CHAT&&CHAT.id===id&&abrir(id,true),1500)}};
@@ -1801,22 +1817,23 @@ function editarPrompts(novo){
 }
 
 /* ---------- send ---------- */
-async function enviar(){
- fechaPM();
+async function enviar(fixo){
+ const proprio=typeof fixo==="string";   // a message the page sends itself: the box and attachments stay
+ if(!proprio)fechaPM();
  if(!CHAT)await novoChat();
- if(REC)REC.stop();
- const t=$("#txt").value;
- if(PEND.some(p=>!p.ok)){toast("Wait for the attachments to finish uploading");return}
- if(!t.trim()&&!PEND.length)return;
+ if(REC&&!proprio)REC.stop();
+ const t=proprio?fixo:$("#txt").value;
+ if(!proprio&&PEND.some(p=>!p.ok)){toast("Wait for the attachments to finish uploading");return}
+ if(!t.trim()&&(proprio||!PEND.length))return;
  pedirAviso();
- let r;try{r=await api(`/api/chats/${CHAT.id}/enviar`,{texto:t,anexos:PEND.map(p=>p.id)})}catch(e){toast(cap(e.message));return}
- $("#txt").value="";LS.set(RASC+CHAT.id,"");PEND=[];desenharPend();ajusta();
+ let r;try{r=await api(`/api/chats/${CHAT.id}/enviar`,{texto:t,anexos:proprio?[]:PEND.map(p=>p.id)})}catch(e){toast(cap(e.message));return}
+ if(!proprio){$("#txt").value="";LS.set(RASC+CHAT.id,"");PEND=[];desenharPend();ajusta()}
  if(r.fila){try{CHAT.fila=(await api("/api/chats/"+CHAT.id)).fila}catch{}desenharFila();rolar(true);toast("Queued, it goes out when the current reply ends");carregarEstado();return}
  CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();
  const u=[...$("#col").querySelectorAll(".m.u")].pop();if(u)u.classList.add("novo");
  rodando(true);escutar(0);carregarEstado();
 }
-$("#envBtn").onclick=enviar;
+$("#envBtn").onclick=()=>enviar();
 $("#parBtn").onclick=()=>CHAT&&api(`/api/chats/${CHAT.id}/parar`,{}).then(()=>toast("Stopping…")).catch(e=>toast(cap(e.message)));
 const ajusta=()=>{const t=$("#txt");t.style.height="auto";t.style.height=Math.min(t.scrollHeight,innerHeight*.4)+"px"};
 $("#txt").addEventListener("input",()=>{ajusta();guardaRascunho()});
@@ -1981,6 +1998,11 @@ function ajustes(){
   linha("Old chat titles","Gives a short title to the chats still named after their first message",b)}
  linha("Rich replies","Tell agents they can answer with live HTML previews and show PC files inline (about 250 tokens, cached)",tog(EST.padrao.dica!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{dica:v});toast(v?"Agents will know":"Hint off")}catch(e){toast(cap(e.message))}}));
  if(EST.root)linha("Root password here","When an agent runs pkexec, ask for your password in this page (https only) instead of the window on the PC screen",tog(EST.padrao.root!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{root:v});toast(v?"Root requests come here":"Root requests go to the PC screen")}catch(e){toast(cap(e.message))}}));
+ if(EST.contas.filter(x=>x.agente==="claude").length>1){
+  sec("Claude accounts");
+  linha("Switch account at the limit","When a reply stops at the usage limit, the chat moves to the Claude account with the most room left and goes on by itself",tog(!!EST.padrao.troca_auto,async v=>{try{EST.padrao=await api("/api/preferencias",{troca_auto:v});toast(v?"Chats switch account at the limit":"You pick the account at the limit")}catch(e){toast(cap(e.message))}}));
+  linha("One memory for all accounts",`Chats on every Claude account use the memory of ${contaNome(EST.principal)} for each folder. What the other accounts remembered is copied in once, and their own files stay`,tog(EST.padrao.memoria_unica!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{memoria_unica:v});toast(v?"One memory for every account":"Each account keeps its own memory")}catch(e){toast(cap(e.message))}}));
+ }
  sec("Updates");
  const vn=el("div",{class:"n"},el("div",{class:"t"},"Agents "+(EST.versao||"")),el("small",{},"Looks for a new release only when you click"));
  const vb=el("button",{class:"btn sm"},"Check for updates"),vi=el("div",{});B.append(el("div",{class:"cart"},vn,vb),vi);
