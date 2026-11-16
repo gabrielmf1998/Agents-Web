@@ -14,9 +14,13 @@ PORT="${AGENTS_WEB_PORT:-47830}"
 SELF="${APPIMAGE:-$0}"
 
 # the trays of this user, found in /proc (procps is not on every system an AppImage lands on)
+ME="$(id -u)"
 trays() {
     for d in /proc/[0-9]*; do
-        [ -O "$d" ] && [ "$(cat "$d/comm" 2>/dev/null)" = agents-web-tray ] && echo "${d#/proc/}"
+        [ "$(cat "$d/comm" 2>/dev/null)" = agents-web-tray ] || continue
+        while read -r k u _; do
+            [ "$k" = Uid: ] && [ "$u" = "$ME" ] && echo "${d#/proc/}"
+        done 2>/dev/null <"$d/status"
     done
 }
 running() { [ -n "$(trays)" ]; }
