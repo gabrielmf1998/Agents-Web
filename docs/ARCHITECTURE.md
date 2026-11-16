@@ -26,7 +26,10 @@ official `claude` or `agy` binary, started in print mode for each message.
 | `src/bin/pkexec` | a `pkexec` wrapper placed first in the agents' `PATH` (see Root approvals) |
 | `tray/agents-web-tray.c` | StatusNotifierItem tray icon with a dbusmenu, supervises the server |
 | `src/agents-web` | the launcher command |
-| `install.sh` | installer, updater and uninstaller |
+| `install.sh` | Linux installer (per user copy, or `--package`) and uninstaller |
+| `windows/agents-web-tray.c` | the Windows tray icon (`AgentsWeb.exe`), Win32, supervises the server like the Linux one |
+| `windows/installer.nsi`, `install.ps1` | the Windows installer (NSIS, per user) and the PowerShell one liner that fetches it |
+| `packaging/` | builds the release files in distribution containers, and tests their install and update |
 
 ### Tray
 
@@ -36,6 +39,17 @@ server exits it is restarted, at most 3 times per minute. Each start moves the p
 the D-Bus session) stops the server, and that stops every running agent. "Start on login" writes or
 removes `~/.config/autostart/agents-web.desktop`. With `--open` it opens the page in the default browser
 as soon as the server answers.
+
+The server runs on `$AGENTS_WEB_PYTHON` if set, else on `python/bin/python3` next to it (the AppImage brings
+one), else on `/usr/bin/python3`. `--version` prints the tray protocol version, so `install.sh` can check that
+the prebuilt binary runs on this system before it uses it (it is built on AlmaLinux 8, glibc 2.28, and needs
+libsystemd from systemd 247 or a backport of it). Inside an AppImage, "Start on login" starts the AppImage file,
+not the tray in its temporary mount.
+
+On Windows, `AgentsWeb.exe` does the same with a notification area icon. It starts `pythonw.exe server.py` from
+its own folder inside a job object that kills the server and the agents when the tray ends, restarts it at most
+3 times per minute, keeps one tray per user (a named mutex) and writes "Start on login" to the `Run` key of the
+user's registry. `--quit` asks a running tray to quit and waits for it.
 
 ### Server
 
@@ -258,6 +272,19 @@ diffs, edit, retry and fork, account moves (all or nothing, pinned model and eff
 limit, the shared memory, search, delete, uploads, signed `/f/` links (folder scope, hidden folders, `..`,
 ranges), the preview sandbox, the manifest and icons.
 
+`tests/test_atualizacao.py` copies the server into a folder that looks like an install of each kind, with a fake
+release of `file://` links, and checks the updater: the SHA256 check (right, wrong, missing, GitHub digest), a
+release without the file for this kind, the same version, a package install through a fake `pkexec` with the
+restart in the same process, a refused password, the AppImage swap, automatic and notify only, and `--update`.
+`AGENTS_WEB_TEST_SERVER` runs both test files against an installed `server.py` instead of the checkout.
+
+In CI, `packaging/test-install.sh pkg|script|appimage` runs in a fresh container of each distribution as root.
+It makes a normal user with a D-Bus session, installs the older build, checks the version and the prebuilt
+tray, runs the unit tests against the installed copy, starts the tray, updates from the page to the new build,
+checks `agents-web update` and removes everything. `packaging/test-windows.ps1` installs the older Windows
+build silently, chats through a fake `claude.exe`, updates from the page, uninstalls with `/PURGE` and runs
+`install.ps1` in Windows PowerShell 5.1.
+
 `tests/e2e_contas.py` is run by hand. It starts a second server on a free port with temporary data and the real
 Claude accounts, and checks with the real CLI that a moved conversation is remembered on the other account and
 back, that tool calls, edited branches and forks survive a move, that `claude --resume` in a terminal finds a
@@ -265,15 +292,61 @@ moved session, and that a chat on one account recalls a memory saved on another.
 
 ## Updates
 
-Settings, Updates, calls `api.github.com/repos/gabrielmf1998/Agents-Web/releases/latest` (or the GitLab
-`releases/permalink/latest` endpoint when `~/.local/opt/agents-web/source` says `gitlab`) only when you
-click, and compares the tag with the running version. **Update now** is offered only for a copy installed
-by `install.sh` and only when no reply is running. It starts the same `curl … install.sh | bash -s --
---no-deps` as `agents-web update` in a transient systemd user unit of its own (`agents-web-update-<time>`,
-`ExitType=cgroup`). The installer stops the tray, which ends the server's whole process group and, when
-the tray itself runs in a unit, that unit too. A separate unit survives both, and the tray the installer
-starts again stays alive in it. Without `systemd-run` it falls back to a new session. The output goes to
-`update.log`, and the page reloads when the server reports the new version.
+Every copy knows how it was installed from the `install-kind` file next to `server.py`: `script` (install.sh),
+`deb`, `rpm`, `pacman`, `appimage` (only while `$APPIMAGE` is set, so an unpacked AppImage counts as a
+checkout) or `windows`. Copies from 1.8 and older have no such file and count as `script`. A git checkout has
+none and is never updated.
+
+`vigia_atualizacoes` reads `api.github.com/repos/gabrielmf1998/Agents-Web/releases/latest` (or the GitLab
+`releases/permalink/latest` endpoint when the `source` file says `gitlab`) two minutes after start and then every
+12 hours, unless Settings says Off. The release must have the file for this kind and machine (for example
+`agents-web-2.0.0-linux-x86_64.tar.gz` or `agents-web_2.0.0_amd64.deb`). Releases are built for x86_64 only, so
+on other machines the page says the release has no file for this PC and nothing runs by itself. With Install, a new release is
+applied when no reply is running and none has run for 10 minutes. With Notify, or for the package kinds, the
+page only shows it. The same code runs for **Update now** and for `agents-web update` (`server.py --update`).
+
+1. The file is downloaded to `~/.local/share/agents-web/updates/` (`%LOCALAPPDATA%\agents-web\updates` on
+   Windows) and its SHA256 is compared with the line for it in the release's `SHA256SUMS`, or with the
+   `digest` GitHub lists for the asset. No match, or no sum at all, and nothing runs.
+2. It is applied by kind:
+
+| Kind | How | Restart |
+|---|---|---|
+| script | unpacks the tarball and runs its own `install.sh --from <folder> --no-deps` | `install.sh` stops the tray and starts the new one. It runs in a transient systemd user unit of its own (`agents-web-update-<time>`, `ExitType=cgroup`), so stopping the tray, which ends the server's process group and the tray's unit if it has one, does not end the installer. Without `systemd-run` it falls back to a new session |
+| appimage | copies the new file next to the old one and renames it over it (needs a writable folder) | `<AppImage> restart` in the same kind of unit |
+| deb, rpm, pacman | `pkexec apt-get install`, `dnf install`, `zypper install` or `pacman -U` with the file. Exit code 126 or 127 from pkexec means the password was refused | the server `execv`s the new `server.py` in the same process, so the tray keeps watching the same PID |
+| windows | the server writes the path of the setup file to `updates\setup.txt` and exits with code 75. The tray sees that code and runs `setup.exe /S /UPDATE`, outside its job object, then quits | the installer stops any tray left, replaces the files and starts the tray again |
+
+The script and AppImage updates end this server when they stop the tray. If it is still running 4 minutes after
+the installer started, the update counts as failed, and automatic updates wait for the next start.
+
+On Windows the server is in the tray's job object, which closes with the tray. The installer must stop the
+tray to replace `AgentsWeb.exe`, so if the server started it, the installer would die with the job. Handing
+the path to the tray avoids that. In a terminal (`--update`) the server starts the installer itself.
+
+Everything is written to `update.log`, and errors are shown in Settings. The page reloads when
+`/api/estado` reports a new version. For tests `AGENTS_WEB_RELEASES_API` points at another release JSON (a
+`file://` or `http://` one), and `AGENTS_WEB_UPDATE_DELAY`, `AGENTS_WEB_UPDATE_EVERY` and
+`AGENTS_WEB_UPDATE_IDLE` shorten the waits.
+
+## Packages and releases
+
+`packaging/build.sh <target>` builds one release file inside a container of the distribution that has the
+right tools, and `packaging/build-all.sh` runs them all with Docker or Podman:
+
+| Target | Built on | File |
+|---|---|---|
+| tray | `almalinux:8` (glibc 2.28, so the binary runs on older systems too) | `agents-web-tray-x86_64`, used by all the Linux files |
+| tarball | `ubuntu:22.04` | `agents-web-<v>-linux-x86_64.tar.gz`, what `install.sh` downloads |
+| deb | `ubuntu:22.04` | `agents-web_<v>_amd64.deb` (`dpkg-deb`) |
+| rpm | `almalinux:9` | `agents-web-<v>-1.x86_64.rpm` (`rpmbuild`, rich dependencies for Fedora, RHEL and openSUSE names) |
+| pacman | `archlinux:latest` | `agents-web-<v>-1-x86_64.pkg.tar.zst` (`makepkg`) |
+| appimage | `ubuntu:22.04` | `Agents_Web-<v>-x86_64.AppImage`, with the trimmed CPython of python-build-standalone and the type2 runtime of the AppImage project |
+| windows | `ubuntu:24.04` | `AgentsWeb-Setup-<v>.exe`, the tray built with MinGW, the embeddable CPython of python.org and NSIS |
+
+The packages put the app in `/usr/lib/agents-web` and the launcher in `/usr/bin/agents-web`. Python, the AppImage
+runtime and the Windows Python are pinned by URL and SHA256 in `build.sh`, and the build stops if a download
+does not match. `SHA256SUMS` lists every file.
 
 ## Root approvals
 

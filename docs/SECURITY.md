@@ -77,14 +77,27 @@ always does. Details:
   folders below it, never hidden ones, and never your whole home folder. It works without the token, so
   treat a copied link like the file itself.
 - Agents Web itself connects only to `api.anthropic.com/api/oauth/usage` (Claude usage limits, with the
-  account's own OAuth token) and, when you click "Check for updates", to the GitHub or GitLab releases API.
-  The CLIs make their own connections as usual. There is no telemetry and no automatic update check.
+  account's own OAuth token) and to the GitHub or GitLab releases API and download links, two minutes after
+  it starts and then every 12 hours (Settings, Updates, Off stops that). The request carries no data about you
+  or the PC beyond what any download does. The CLIs make their own connections as usual. There is no telemetry.
 - **Smart titles** (on by default, Settings) run `claude -p --model haiku` once per new chat with the first
   message (up to 1500 characters) and, for short messages, the start of the reply. It runs without tools,
   settings, MCP servers or a saved session, on the chat's own Claude login. For Antigravity chats it uses
   one of your Claude logins, so that first message also goes to Anthropic. Turn it off to keep titles local.
-  "Update now" and `agents-web update` download the installer from the same repository, over https, only
-  when you ask.
+
+## Updates and release files
+
+- An update or an install from `install.sh` or `install.ps1` downloads the release file over https and compares
+  its SHA256 with the release's `SHA256SUMS` (or the digest GitHub keeps for each file). A file that does not
+  match, or has no sum, is deleted and never run. This protects against a broken or swapped download, not
+  against someone who can publish a release in the repository, since the sums come from the same place.
+- The files are not signed. There is no GPG key for the packages, so `zypper` needs `--allow-unsigned-rpm`,
+  and the Windows installer has no Authenticode signature, so SmartScreen warns on first run.
+- Automatic updates run without asking only for installs that need no password (the per user copy, the
+  AppImage and Windows), as your own user. The packages update only when you click, through `pkexec`, so the
+  usual polkit password dialog appears on the PC. The password never goes through Agents Web.
+- The release files are built by GitHub Actions from the tagged commit, in official distribution containers,
+  with Python, the AppImage runtime and the Windows Python pinned by SHA256.
 
 ## Reporting a problem
 

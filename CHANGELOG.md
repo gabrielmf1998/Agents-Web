@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.0 (2026-11-16)
+
+New
+
+- **Packages for every big Linux family.** Each release now has a `.deb` (Debian, Ubuntu and derivatives), an
+  `.rpm` (Fedora, RHEL, AlmaLinux, Rocky, openSUSE), a pacman package (Arch and derivatives) and an AppImage with
+  its own Python for anything else, all with a prebuilt tray icon. `install.sh --package` picks and installs
+  the right package for you.
+- **Windows 10 and 11.** `AgentsWeb-Setup-<version>.exe` installs for your user without administrator rights,
+  with its own Python, a tray icon (Open, Pair phone, Restart, Start on login, Quit), a Start menu entry and an
+  entry in Apps. In PowerShell, `irm https://raw.githubusercontent.com/gabrielmf1998/Agents-Web/main/install.ps1 | iex`
+  downloads it, checks its SHA256 and installs it.
+- **Automatic updates.** Agents Web looks for a new release two minutes after it starts and then twice a day.
+  The per user install, the AppImage and Windows install it by themselves when no reply has run for 10 minutes;
+  the service restarts and an open page reloads. Packages show a notice and install with one click and your
+  password. Settings, Updates, has Install, Notify or Off, says how this copy was installed, and shows the error
+  of a failed update. A green dot on Settings marks a new release.
+- **Every download is checked.** Updates and both installers refuse a file whose SHA256 does not match the
+  release's `SHA256SUMS` (or GitHub's own digest), and refuse to install when there is no sum at all.
+- **One line installer for more distributions.** `install.sh` was for Arch and Fedora. It now also knows Debian,
+  Ubuntu, RHEL, AlmaLinux, Rocky and openSUSE, and downloads the release file with the prebuilt tray icon, so it
+  no longer needs gcc or the libsystemd headers.
+- **Releases are built and tested by CI.** The files are built in the official distribution containers. Each one
+  is installed, used, updated from an older build and removed on 9 Linux distributions (20 combinations) and on
+  Windows Server 2022 and 2025, and a passing `v*` tag is published with its `SHA256SUMS`.
+- `agents-web update` now runs the same checked update as the page, with sudo for packages.
+
 ## 1.8.0 (2026-11-15)
 
 New

@@ -3,3 +3,4 @@ __pycache__/
 *.tmp
 /agents-web-tray
 tray/agents-web-tray
+/dist/

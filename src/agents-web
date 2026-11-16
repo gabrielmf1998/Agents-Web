@@ -2,9 +2,11 @@
 # agents-web: start Agents Web, or open it when it is already running.
 # https://github.com/gabrielmf1998/Agents-Web (MIT license)
 set -u
-APP="${AGENTS_WEB_HOME:-$HOME/.local/opt/agents-web}"
+# set by install.sh and the packages to where the app lives
+APP_DEFAULT="$HOME/.local/opt/agents-web"
+APP="${AGENTS_WEB_HOME:-$APP_DEFAULT}"
 PORT="${AGENTS_WEB_PORT:-47830}"
-INSTALLER="https://raw.githubusercontent.com/gabrielmf1998/Agents-Web/main/install.sh"
+KIND="$(cat "$APP/install-kind" 2>/dev/null || echo script)"
 
 usage() {
     cat <<EOF
@@ -17,16 +19,17 @@ Usage: agents-web [command]
   status     tell whether it is running
   log        follow the server log
   version    print the installed version
-  update     download and install the latest release
+  update     download and install the latest release (checked against its SHA256 sum)
   uninstall  remove the app (chats and settings are kept, see --purge in the README)
 EOF
 }
 
-running() { pgrep -x agents-web-tray >/dev/null; }
+running() { pgrep -u "$(id -u)" -x agents-web-tray >/dev/null; }
+version() { sed -n 's/^VERSAO = "\(.*\)"/\1/p' "$APP/server.py"; }
 
 stop() {
     running || return 1
-    pkill -x agents-web-tray
+    pkill -u "$(id -u)" -x agents-web-tray
     for _ in $(seq 1 50); do running || return 0; sleep 0.1; done
     return 0
 }
@@ -47,15 +50,31 @@ case "${1:-start}" in
     log)
         exec tail -n 50 -f "$HOME/.local/share/agents-web/server.log" ;;
     version|--version|-v)
-        sed -n 's/^VERSAO = "\(.*\)"/\1/p' "$APP/server.py" ;;
+        version ;;
     update)
-        if [ "$(cat "$APP/source" 2>/dev/null)" = gitlab ]; then
+        if [ -f "$APP/install-kind" ]; then
+            before="$(version)"
+            python3 "$APP/server.py" --update || exit $?
+            # a package replaced the files under the running server: start the new one (only if it changed)
+            case "$KIND" in
+                deb|rpm|pacman) if [ "$(version)" != "$before" ] && running; then
+                                    stop; setsid -f "$APP/agents-web-tray" >/dev/null 2>&1
+                                    echo "Agents Web restarted."
+                                fi ;;
+            esac
+        # copies installed before 2.0 update through the installer
+        elif [ "$(cat "$APP/source" 2>/dev/null)" = gitlab ]; then
             curl -fsSL "https://gitlab.com/gabriel17166/agents-web/-/raw/main/install.sh" | bash -s -- --gitlab
         else
-            curl -fsSL "$INSTALLER" | bash
+            curl -fsSL "https://raw.githubusercontent.com/gabrielmf1998/Agents-Web/main/install.sh" | bash
         fi ;;
     uninstall)
-        exec bash "$APP/install.sh" --uninstall "${@:2}" ;;
+        case "$KIND" in
+            deb) echo "Remove the package: sudo apt remove agents-web" ;;
+            rpm) echo "Remove the package: sudo dnf remove agents-web   (openSUSE: sudo zypper remove agents-web)" ;;
+            pacman) echo "Remove the package: sudo pacman -R agents-web" ;;
+            *) exec bash "$APP/install.sh" --uninstall "${@:2}" ;;
+        esac ;;
     -h|--help|help)
         usage ;;
     *)

@@ -1,0 +1,56 @@
+#!/bin/sh
+# AppRun of the Agents Web AppImage. The AppImage carries its own Python, so it only needs a Linux desktop
+# with a tray (or none: "server" runs without one).
+#   Agents_Web.AppImage [start]   start the service and the tray icon and open the page (or just open the page)
+#   Agents_Web.AppImage tray      start without opening the page (used by "Start on login")
+#   Agents_Web.AppImage server    run only the server, in the foreground (headless machines)
+#   Agents_Web.AppImage stop | restart | status | version | update
+# https://github.com/gabrielmf1998/Agents-Web (MIT license)
+HERE="$(dirname "$(readlink -f "$0")")"
+APP="$HERE/usr/lib/agents-web"
+export AGENTS_WEB_HOME="$APP"
+export AGENTS_WEB_PYTHON="$APP/python/bin/python3"
+PORT="${AGENTS_WEB_PORT:-47830}"
+SELF="${APPIMAGE:-$0}"
+
+# the trays of this user, found in /proc (procps is not on every system an AppImage lands on)
+trays() {
+    for d in /proc/[0-9]*; do
+        [ -O "$d" ] && [ "$(cat "$d/comm" 2>/dev/null)" = agents-web-tray ] && echo "${d#/proc/}"
+    done
+}
+running() { [ -n "$(trays)" ]; }
+stop() {
+    p="$(trays)"
+    [ -n "$p" ] || return 1
+    kill $p 2>/dev/null
+    i=0
+    while running && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    return 0
+}
+
+case "${1:-start}" in
+    start|open)
+        running || echo "Agents Web: http://127.0.0.1:$PORT/"
+        exec "$APP/agents-web-tray" --open ;;
+    tray)
+        exec "$APP/agents-web-tray" ;;
+    server)
+        exec "$AGENTS_WEB_PYTHON" -u "$APP/server.py" ;;
+    stop|quit)
+        if stop; then echo "Agents Web stopped."; else echo "Agents Web is not running."; fi ;;
+    restart)
+        stop
+        setsid -f "$SELF" tray >/dev/null 2>&1 </dev/null
+        echo "Agents Web restarted." ;;
+    status)
+        if running; then echo "running on http://127.0.0.1:$PORT/"; else echo "stopped"; exit 3; fi ;;
+    version|--version|-v)
+        sed -n 's/^VERSAO = "\(.*\)"/\1/p' "$APP/server.py" ;;
+    update)
+        exec "$AGENTS_WEB_PYTHON" "$APP/server.py" --update ;;
+    -h|--help|help)
+        sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *)
+        sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

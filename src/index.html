@@ -245,6 +245,7 @@ body[data-tema=agy] .vazio h2{background:var(--ac);-webkit-background-clip:text;
 @keyframes surge{from{opacity:0;transform:translateY(10px)}}
 .cab-m{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12.5px;color:var(--mu)}
 .cab-m b{color:var(--tx);font-weight:600}
+.tem-nova{position:relative}.tem-nova::after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--p1)}
 .badge{font:500 11px var(--mono);padding:1px 7px;border-radius:999px;border:1px solid var(--bd2);color:var(--mu)}
 .m.u{display:flex;flex-direction:column;align-items:flex-end}
 .m.u .corpo{background:var(--p2);border:1px solid var(--bd);border-radius:var(--raio) var(--raio) 4px var(--raio);padding:10px 14px;white-space:pre-wrap;word-wrap:break-word;max-width:82%;font-size:calc(14px*var(--fs))}
@@ -719,7 +720,7 @@ const LS={get(k,d){try{return localStorage.getItem(k)??d}catch{return d}},set(k,
  h.addEventListener("keydown",e=>{const d={ArrowLeft:-16,ArrowRight:16}[e.key];if(d){e.preventDefault();atual=poe(atual+d,true)}else if(e.key==="Home"){e.preventDefault();atual=poe(PAD,true)}});
  addEventListener("resize",()=>{atual=poe(+LS.get("ag.lado",PAD)||PAD)});
 })();
-function toast(s){document.querySelectorAll(".toast").forEach(t=>t.remove());const t=el("div",{class:"toast"},s);document.body.append(t);setTimeout(()=>t.remove(),2800)}
+function toast(s,ms=2800){document.querySelectorAll(".toast").forEach(t=>t.remove());const t=el("div",{class:"toast"},s);document.body.append(t);setTimeout(()=>t.remove(),ms)}
 async function api(cam,corpo){const o={headers:{"X-Token":TOKEN}};if(corpo!==undefined){o.method="POST";o.headers["Content-Type"]="application/json";o.body=JSON.stringify(corpo)}const r=await fetch(cam,o);const j=await r.json().catch(()=>({erro:"Invalid response"}));if(!r.ok)throw new Error(j.erro||r.status);return j}
 const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const plural=(n,s)=>`${n} ${s}${n===1?"":"s"}`;
@@ -1026,13 +1027,15 @@ function nomeModelo(m){
 }
 
 async function carregarEstado(){
- const antes=new Map(EST.chats.map(c=>[c.id,c.rodando]));
+ const antes=new Map(EST.chats.map(c=>[c.id,c.rodando])),vAntes=EST.versao;
  try{EST=await api("/api/estado")}catch(e){$("#uso").innerHTML=`<div class="medidor" style="color:var(--er);padding:6px 0">Service unreachable</div>`;return}
+ // updated by itself: load the new page (drafts are kept in the browser)
+ if(vAntes&&EST.versao&&vAntes!==EST.versao){toast(`Agents was updated to ${EST.versao}, reloading`,4000);setTimeout(()=>location.reload(),1500)}
  if(SEL)for(const id of[...SEL])if(!EST.chats.some(c=>c.id===id))SEL.delete(id);
  for(const c of EST.chats)if(antes.get(c.id)&&!c.rodando&&!(ES&&CHAT&&CHAT.id===c.id))avisar(c.id,c.titulo,"",false);
  let poda=false;for(const id of[...NOVOS])if(!EST.chats.some(c=>c.id===id)){NOVOS.delete(id);poda=true}if(poda)salvaNovos();
  for(const p of EST.pedidos||[])if(!(ES&&CHAT&&CHAT.id===p.chat))pkAlerta(p,p.chat,p.titulo);
- desenharLista();desenharUso();carregarCli();podaRascunhos();
+ desenharLista();desenharUso();carregarCli();podaRascunhos();marcaAtualizacao();
  const ab=CHAT&&EST.chats.find(c=>c.id===CHAT.id);if(ab&&ab.rodando&&!ES)abrir(CHAT.id,true);
 }
 
@@ -2004,23 +2007,43 @@ function ajustes(){
   linha("One memory for all accounts",`Chats on every Claude account use the memory of ${contaNome(EST.principal)} for each folder. What the other accounts remembered is copied in once, and their own files stay`,tog(EST.padrao.memoria_unica!==false,async v=>{try{EST.padrao=await api("/api/preferencias",{memoria_unica:v});toast(v?"One memory for every account":"Each account keeps its own memory")}catch(e){toast(cap(e.message))}}));
  }
  sec("Updates");
- const vn=el("div",{class:"n"},el("div",{class:"t"},"Agents "+(EST.versao||"")),el("small",{},"Looks for a new release only when you click"));
- const vb=el("button",{class:"btn sm"},"Check for updates"),vi=el("div",{});B.append(el("div",{class:"cart"},vn,vb),vi);
+ const U=EST.atualizacao||{},modo=EST.padrao.atualizar||"auto";
+ const vn=el("div",{class:"n"},el("div",{class:"t"},"Agents "+(EST.versao||"")),el("small",{},(TIPO_INST[U.tipo]||TIPO_INST[""])+" · "+(U.nova?`version ${U.ultima} is available`:U.ultima?"up to date":"not checked yet")));
+ const vb=el("button",{class:"btn sm"},"Check for updates"),vi=el("div",{});B.append(el("div",{class:"cart"},vn,vb));
  vb.onclick=async()=>{vb.disabled=true;vb.textContent="Checking…";try{mostraAtualizacao(await api("/api/atualizacao?forcar=1"),vi,vn)}catch(e){toast(cap(e.message))}vb.disabled=false;vb.textContent="Check again"};
+ if(U.tipo){
+  const sub=m=>m==="nao"?"Never looks for new releases":U.senha?"Looks twice a day and tells you. Installing asks for the PC password":m==="auto"?"Looks twice a day and installs a new release by itself when no reply has run for 10 minutes":"Looks twice a day and tells you when there is a new release";
+  const n=el("div",{class:"n"},el("div",{class:"t"},"Automatic updates"),el("small",{},sub(modo)));
+  const ops=U.senha?[["avisar","Notify"],["nao","Off"]]:[["auto","Install"],["avisar","Notify"],["nao","Off"]];
+  B.append(el("div",{class:"cart"},n,segA(ops,U.senha&&modo==="auto"?"avisar":modo,async v=>{try{EST.padrao=await api("/api/preferencias",{atualizar:v});n.querySelector("small").textContent=sub(v);EST.atualizacao.erro="";marcaAtualizacao()}catch(e){toast(cap(e.message))}})));
+ }
+ B.append(vi);
+ if(U.erro)vi.append(el("p",{class:"nota",style:"color:var(--er)"},"The last update failed: "+U.erro));
+ if(U.nova&&U.ultima)api("/api/atualizacao").then(u=>mostraAtualizacao(u,vi,vn)).catch(()=>{});
+}
+const TIPO_INST={script:"Installed for your user",deb:"Installed from the .deb package",rpm:"Installed from the .rpm package",pacman:"Installed from the pacman package",appimage:"AppImage",windows:"Windows install","":"Git checkout"};
+function marcaAtualizacao(){
+ const U=EST.atualizacao||{},tem=!!(U.nova&&EST.padrao.atualizar!=="nao")||!!U.erro;
+ for(const b of[$("#animBtn"),$("#tAjustes")])if(b){b.classList.toggle("tem-nova",tem);b.title=tem?(U.erro?"Settings · the last update failed":`Settings · version ${U.ultima} is available`):(b.id==="animBtn"?"Animations, alerts, voice":"Settings (Ctrl+,)")}
 }
 function mostraAtualizacao(u,vi,vn){
- vi.textContent="";vn.querySelector("small").textContent=u.nova?`Version ${u.ultima} is available`:`This is the latest version (${u.atual})`;
+ vi.textContent="";vn.querySelector("small").textContent=(TIPO_INST[u.tipo]||TIPO_INST[""])+" · "+(u.nova?`version ${u.ultima} is available`:`this is the latest version (${u.atual})`);
+ if(u.erro)vi.append(el("p",{class:"nota",style:"color:var(--er)"},"The last update failed: "+u.erro));
  if(!u.nova)return;
  if(u.notas)vi.append(el("details",{class:"notas"},el("summary",{},"What's new in "+u.ultima),el("div",{class:"corpo",html:md(u.notas)})));
  if(!u.instalavel){vi.append(el("p",{class:"nota"},"This copy runs from a git checkout. Update it with git pull."));return}
- const b=el("button",{class:"btn sm pri"},"Update now");
+ if(u.arquivo===false){vi.append(el("p",{class:"nota"},`This release has no file for this kind of install on this PC (${u.maquina}). `+(u.tipo==="script"?"The install line from the README builds it from source.":"See the release page.")));return}
+ if(u.tipo==="appimage"&&!u.sozinha){vi.append(el("p",{class:"nota"},"The folder of the AppImage file is not writable, so it cannot replace itself. Download the new AppImage from the release page."));return}
+ if(u.senha)vi.append(el("p",{class:"nota"},"Installing the package asks for the administrator password in a window on the PC screen."+(LOCAL?"":" Do it when you are at the PC.")));
+ const b=el("button",{class:"btn sm pri"},u.senha?"Install now":"Update now");
  b.onclick=async()=>{if(!confirm(`Update to ${u.ultima} now? The service restarts for a few seconds.`))return;b.disabled=true;try{await api("/api/atualizar",{});aguardaVersao(u.atual)}catch(e){toast(cap(e.message));b.disabled=false}};
  vi.append(el("div",{style:"display:flex;justify-content:flex-end;margin-top:8px"},b));
 }
 function aguardaVersao(antiga){
  toast("Updating, the page reloads by itself");const t0=Date.now();
- const iv=setInterval(async()=>{if(Date.now()-t0>240000){clearInterval(iv);toast("The update is taking long. See ~/.local/share/agents-web/update.log");return}
-  try{const e=await api("/api/estado");if(e.versao&&e.versao!==antiga){clearInterval(iv);location.reload()}}catch{}},2500);
+ const iv=setInterval(async()=>{if(Date.now()-t0>300000){clearInterval(iv);toast("The update is taking long. See "+(EST.log_atualizacao||"update.log"));return}
+  try{const e=await api("/api/estado");if(e.versao&&e.versao!==antiga){clearInterval(iv);location.reload();return}
+   const a=e.atualizacao||{};if(a.erro&&!a.rodando){clearInterval(iv);EST=e;marcaAtualizacao();toast("Update failed: "+a.erro,8000)}}catch{}},2500);
 }
 function dlgSeguro(){
  abreDlg("Secure address","estreito");const B=$("#dlgB");
@@ -2128,6 +2151,7 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
  carregarUso();
  const h=location.hash.match(/c=([a-f0-9]{12})/);
  if(location.hash==="#celular")celular();
+ if(location.hash==="#ajustes")ajustes();
  if(location.hash.startsWith("#uso"))dlgUso(location.hash.includes("tokens")?"tokens":"limites");
  if(h)abrir(h[1]);else if(EST.chats.length)abrir(EST.chats[0].id);else desenharMsgs();
 })();

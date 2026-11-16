@@ -2,6 +2,8 @@
  * Starts the server as a child process. Quitting the tray stops the service and any running agent.
  * Build: gcc -O2 -Wall -o agents-web-tray agents-web-tray.c -lsystemd -lm
  * Options: --open opens the page once the service answers. A second launch only opens the page.
+ * --version prints the version and exits (the installer uses it to check that a prebuilt tray runs here).
+ * Python: $AGENTS_WEB_PYTHON, else python/bin/python3 next to the server (the AppImage), else /usr/bin/python3.
  * https://github.com/gabrielmf1998/Agents-Web (MIT license) */
 #define _GNU_SOURCE
 #include <systemd/sd-bus.h>
@@ -36,6 +38,7 @@ static int estado = INICIANDO, tarefas, revisao = 1, saindo, reiniciando;
 static int reinicios, abrir_ao_subir;
 static time_t janela;
 static char base[1024], script[1100], autostart[1100], arqlog[1200], exe[1024], motivo[160], token_xdg[256];
+static char python[1100] = "/usr/bin/python3";
 static const char *home;
 
 /* ------------------------------------------------------------ icon */
@@ -132,7 +135,7 @@ static void inicia(void) {
         if (rename(arqlog, velho)) {}
         int lf = open(arqlog, O_WRONLY | O_CREAT | O_TRUNC, 0600);
         if (lf >= 0) { dup2(lf, 1); dup2(lf, 2); }
-        execl("/usr/bin/python3", "python3", "-u", script, (char *)NULL);
+        execl(python, "python3", "-u", script, (char *)NULL);
         _exit(127);
     }
     setpgid(p, p);
@@ -213,13 +216,30 @@ static int tique(sd_event_source *s, uint64_t t, void *u) {
 /* ------------------------------------------------------------ autostart */
 static int no_autostart(void) { struct stat st; return stat(autostart, &st) == 0; }
 
+/* one Exec= argument. A path with a space or a reserved character is quoted as the Desktop Entry spec says:
+ * " ` $ \ get a backslash, which the string escaping of the file doubles, and % is always written %% */
+static void exec_arg(FILE *f, const char *s) {
+    if (!strpbrk(s, " \t\n\"'\\><~|&;$*?#()`%")) { fputs(s, f); return; }
+    fputc('"', f);
+    for (; *s; s++) {
+        if (*s == '"' || *s == '`' || *s == '$') fprintf(f, "\\\\%c", *s);
+        else if (*s == '\\') fputs("\\\\\\\\", f);
+        else if (*s == '%') fputs("%%", f);
+        else fputc(*s, f);
+    }
+    fputc('"', f);
+}
+
 static void alterna_autostart(void) {
     if (no_autostart()) { unlink(autostart); return; }
     char d[1100]; snprintf(d, sizeof d, "%s/.config/autostart", home); mkdir(d, 0755);
     FILE *f = fopen(autostart, "w");
     if (!f) return;
-    fprintf(f, "[Desktop Entry]\nType=Application\nName=Agents\nComment=Tray icon and service for Agents\n"
-               "Exec=%s\nIcon=agents-web\nTerminal=false\nX-KDE-autostart-phase=2\n", exe);
+    /* inside an AppImage this program lives in a mount that is gone after it quits: start the AppImage */
+    const char *ai = getenv("APPIMAGE");
+    fputs("[Desktop Entry]\nType=Application\nName=Agents\nComment=Tray icon and service for Agents\nExec=", f);
+    exec_arg(f, ai && *ai ? ai : exe);
+    fprintf(f, "%s\nIcon=agents-web\nTerminal=false\nX-KDE-autostart-phase=2\n", ai && *ai ? " tray" : "");
     fclose(f);
 }
 
@@ -485,6 +505,7 @@ static void sair(void) {
 static int sinal(sd_event_source *s, const struct signalfd_siginfo *si, void *u) { (void)s; (void)si; (void)u; sair(); return 0; }
 
 int main(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--version")) { puts("agents-web-tray 2"); return 0; }
     home = getenv("HOME");
     if (!home) return 1;
     for (int i = 1; i < argc; i++) if (!strcmp(argv[i], "--open")) abrir_ao_subir = 1;
@@ -496,6 +517,10 @@ int main(int argc, char **argv) {
     snprintf(base, sizeof base, "%s", exe);
     dirname(base);
     snprintf(script, sizeof script, "%s/server.py", base);
+    const char *py = getenv("AGENTS_WEB_PYTHON");
+    char junto[1100]; snprintf(junto, sizeof junto, "%s/python/bin/python3", base);
+    if (py && *py) snprintf(python, sizeof python, "%s", py);
+    else if (access(junto, X_OK) == 0) snprintf(python, sizeof python, "%s", junto);
     snprintf(autostart, sizeof autostart, "%s/.config/autostart/agents-web.desktop", home);
     char d[1100]; snprintf(d, sizeof d, "%s/.local/share/agents-web", home); mkdir(d, 0700);
     snprintf(arqlog, sizeof arqlog, "%s/server.log", d);

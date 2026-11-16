@@ -1,7 +1,12 @@
 name: CI
 
+# Every push: tests, the release files (built in official distribution containers), an install, update and
+# removal test of each of them on the distributions below and on Windows. A v* tag that passes all of it is
+# published as a GitHub release with those files and their SHA256SUMS.
 on:
   push:
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -13,27 +18,129 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.12", "3.13"]
+        python: ["3.10", "3.13", "3.14"]   # 3.9 runs in the AlmaLinux 9 install test
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: Compile
-        run: python -m py_compile src/server.py src/bin/pkexec
+        run: python -m py_compile src/server.py src/bin/pkexec packaging/ico.py packaging/fake-release.py
       - name: End to end tests (fake claude CLI, throwaway HOME)
         run: python -m unittest discover -s tests -v
 
-  build-and-lint:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Build the tray icon
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libsystemd-dev
-          gcc -O2 -Wall -Wextra -o /tmp/agents-web-tray tray/agents-web-tray.c -lsystemd -lm
+      - uses: actions/checkout@v7
       - name: Shell scripts
         run: |
-          bash -n install.sh src/agents-web
-          shellcheck -S warning install.sh src/agents-web
+          bash -n install.sh src/agents-web packaging/build.sh packaging/build-all.sh packaging/test-install.sh
+          sh -n packaging/AppRun
+          shellcheck -S warning install.sh src/agents-web packaging/build.sh packaging/build-all.sh \
+            packaging/test-install.sh packaging/AppRun
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Release files
+        run: packaging/build-all.sh
+      - name: An older build to update from (tests only)
+        run: OUT=dist/old VERSION=1.9.9 packaging/build-all.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  linux:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { mode: pkg, image: "debian:12" }
+          - { mode: pkg, image: "debian:13" }
+          - { mode: pkg, image: "ubuntu:22.04" }
+          - { mode: pkg, image: "ubuntu:24.04" }
+          - { mode: pkg, image: "fedora:latest" }
+          - { mode: pkg, image: "almalinux:9" }
+          - { mode: pkg, image: "opensuse/tumbleweed:latest" }
+          - { mode: pkg, image: "opensuse/leap:16.0" }
+          - { mode: pkg, image: "archlinux:latest" }
+          - { mode: script, image: "debian:12" }
+          - { mode: script, image: "ubuntu:24.04" }
+          - { mode: script, image: "fedora:latest" }
+          - { mode: script, image: "almalinux:9" }
+          - { mode: script, image: "opensuse/tumbleweed:latest" }
+          - { mode: script, image: "archlinux:latest" }
+          - { mode: appimage, image: "debian:12" }
+          - { mode: appimage, image: "ubuntu:22.04" }
+          - { mode: appimage, image: "fedora:latest" }
+          - { mode: appimage, image: "opensuse/tumbleweed:latest" }
+          - { mode: appimage, image: "archlinux:latest" }
+    name: ${{ matrix.mode }} on ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Install, update and remove
+        run: |
+          python3 packaging/fake-release.py dist file:///dist
+          python3 packaging/fake-release.py dist/old file:///dist/old
+          # the AppImage mounts itself with FUSE, which a container only allows when privileged
+          extra=""
+          [ "${{ matrix.mode }}" = appimage ] && extra="--privileged"
+          docker run --rm $extra -v "$PWD:/src:ro" -v "$PWD/dist:/dist:ro" "${{ matrix.image }}" \
+            bash /src/packaging/test-install.sh "${{ matrix.mode }}"
+
+  windows:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install, chat, update, uninstall
+        shell: pwsh
+        run: ./packaging/test-windows.ps1 -Dist dist
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, lint, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          grep -q "^VERSAO = \"$v\"" src/server.py || { echo "src/server.py is not version $v"; exit 1; }
+          awk -v v="$v" '/^## / { if (f) exit; if ($2 == v) { f = 1; next } } f' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf dist/old dist/agents-web-tray-* dist/release.json
+          (cd dist && sha256sum -c SHA256SUMS && ls -la)
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Agents Web ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md

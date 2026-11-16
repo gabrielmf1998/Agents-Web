@@ -23,7 +23,8 @@ import urllib.parse
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-SERVIDOR = RAIZ / "src" / "server.py"
+# AGENTS_WEB_TEST_SERVER tests an installed copy instead (the package tests in CI use it)
+SERVIDOR = Path(os.environ.get("AGENTS_WEB_TEST_SERVER") or RAIZ / "src" / "server.py")
 SID = "0b6f3c2e-6d55-4f3e-9a51-1f2e3d4c5b6a"
 
 # A tiny stand-in for the Claude Code CLI. It logs its argv and what it reads on stdin, then answers in

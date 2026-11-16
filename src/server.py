@@ -4,22 +4,42 @@
 # local network (zt*, docker, VPN and similar interfaces are left out). Phones pair with a PIN.
 # https://github.com/gabrielmf1998/Agents-Web (MIT license)
 import json, os, sys, time, threading, subprocess, signal, secrets, re, ipaddress, errno
-import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes
+import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes, platform
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "1.8.0"
+VERSAO = "2.0.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
+WIN = os.name == "nt"
+if WIN:
+    # The server runs windowless (pythonw): without this flag every CLI it starts would open a console window
+    # of its own. Sign in asks for CREATE_NEW_CONSOLE, which Windows lets win over it.
+    _Popen = subprocess.Popen
+
+    class _PopenSemJanela(_Popen):
+        def __init__(self, *a, **kw):
+            kw["creationflags"] = kw.get("creationflags", 0) | 0x08000000  # CREATE_NO_WINDOW
+            super().__init__(*a, **kw)
+    subprocess.Popen = _PopenSemJanela
+    _APPDATA = Path(os.environ.get("APPDATA") or HOME / "AppData/Roaming")
+    _LOCAL = Path(os.environ.get("LOCALAPPDATA") or HOME / "AppData/Local")
 # AGENTS_WEB_CONFIG_DIR and AGENTS_WEB_DATA_DIR run a second, separate instance (tests, trying a new version)
-CFG_DIR = Path(os.environ.get("AGENTS_WEB_CONFIG_DIR") or HOME / ".config/agents-web")
-DATA = Path(os.environ.get("AGENTS_WEB_DATA_DIR") or HOME / ".local/share/agents-web")
+CFG_DIR = Path(os.environ.get("AGENTS_WEB_CONFIG_DIR") or (_APPDATA / "agents-web" if WIN else HOME / ".config/agents-web"))
+DATA = Path(os.environ.get("AGENTS_WEB_DATA_DIR") or (_LOCAL / "agents-web" if WIN else HOME / ".local/share/agents-web"))
 CHATS = DATA / "chats"
 UPLOADS = DATA / "uploads"
 CFG_FILE = CFG_DIR / "config.json"
 PORTA = int(os.environ.get("AGENTS_WEB_PORT", "47830"))
-CLAUDE = shutil.which("claude") or str(HOME / ".local/bin/claude")
-AGY = shutil.which("agy") or str(HOME / ".local/bin/agy")
+LOCAL_BIN = HOME / ".local/bin"   # where the official Claude Code and agy installers put their commands
+
+
+def _cli(nome):
+    return shutil.which(nome) or str(LOCAL_BIN / (nome + ".exe" if WIN else nome))
+
+
+CLAUDE = _cli("claude")
+AGY = _cli("agy")
 
 for d in (CFG_DIR, CHATS, UPLOADS, CFG_DIR / "contas"):
     d.mkdir(parents=True, exist_ok=True)
@@ -36,10 +56,51 @@ def salvar_json(caminho, dados, modo=0o600):
         with open(tmp, "w") as f:
             json.dump(dados, f, ensure_ascii=False, indent=1)
         os.chmod(tmp, modo)
-        os.replace(tmp, caminho)
+        troca_arquivo(tmp, caminho)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+SETPRIV = None if WIN else shutil.which("setpriv")
+
+
+def troca_arquivo(org, dst):
+    """os.replace. On Windows it fails while another thread has the target open for reading, so try again."""
+    for i in range(40 if WIN else 1):
+        try:
+            return os.replace(org, dst)
+        except PermissionError:
+            if i == 39 or not WIN:
+                raise
+            time.sleep(0.05)
+
+
+def mata_arvore(proc, forte=False):
+    """Stop an agent and everything it started (its own process group on Linux, its process tree on Windows)."""
+    if not proc or proc.poll() is not None:
+        return
+    if WIN:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL if forte else signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+
+def pid_vivo(pid):
+    if WIN:
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        codigo = ctypes.c_ulong()
+        ok = k.GetExitCodeProcess(h, ctypes.byref(codigo))
+        k.CloseHandle(h)
+        return bool(ok) and codigo.value == 259  # STILL_ACTIVE
+    return Path(f"/proc/{int(pid)}").exists()
 
 
 def carregar_config():
@@ -49,6 +110,7 @@ def carregar_config():
             cfg = json.loads(CFG_FILE.read_text())
         except Exception:
             cfg = {}
+    antes = json.loads(json.dumps(cfg))
     cfg.setdefault("token", secrets.token_urlsafe(32))
     cfg.setdefault("dispositivos", [])
     cfg.setdefault("contas", [
@@ -56,7 +118,8 @@ def carregar_config():
         {"id": "google", "agente": "agy", "nome": "Antigravity", "dir": ""},
     ])
     cfg.setdefault("padrao", {"cwd": str(HOME), "perm_claude": "bypassPermissions", "perm_agy": "skip"})
-    salvar_json(CFG_FILE, cfg)
+    if cfg != antes:
+        salvar_json(CFG_FILE, cfg)
     return cfg
 
 
@@ -78,7 +141,9 @@ def env_conta(conta):
     env = {k: v for k, v in os.environ.items()
            if not (k.startswith("CLAUDECODE") or k.startswith("CLAUDE_CODE_")
                    or k in ("CLAUDE_CONFIG_DIR", "CLAUDE_PID", "CLAUDE_EFFORT"))}
-    env["PATH"] = str(HOME / ".local/bin") + ":" + env.get("PATH", "/usr/bin")
+    env["PATH"] = str(LOCAL_BIN) + os.pathsep + env.get("PATH", "" if WIN else "/usr/bin")
+    if WIN:
+        env.setdefault("PYTHONUTF8", "1")
     if conta and conta["agente"] == "claude" and conta.get("dir"):
         Path(conta["dir"]).mkdir(parents=True, exist_ok=True)
         env["CLAUDE_CONFIG_DIR"] = conta["dir"]
@@ -189,7 +254,7 @@ def _copia_memoria(org, dst, conta):
                 guarda = DATA / "memory-backups"
                 guarda.mkdir(parents=True, exist_ok=True)
                 (guarda / f"{dst.parent.name}-MEMORY-{time.strftime('%Y%m%d-%H%M%S')}-{conta['id']}-{secrets.token_hex(2)}.md").write_text(atual)
-            os.replace(tmp, destino)
+            troca_arquivo(tmp, destino)
             n += 1
             break
     return n
@@ -246,25 +311,46 @@ def unir_memorias(cwd=None):
 _rede = {"t": 0, "redes": [], "ips": []}
 
 
+def _interfaces_linux():
+    out = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True, timeout=3).stdout
+    return [(p[1], p[3]) for p in (l.split() for l in out.splitlines()) if len(p) > 3]
+
+
+def _interfaces_win():
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                        "Get-NetIPAddress -AddressFamily IPv4 | Select-Object InterfaceAlias,IPAddress,PrefixLength"
+                        " | ConvertTo-Json -Compress"], capture_output=True, text=True, timeout=20)
+    j = json.loads(r.stdout or "[]")
+    return [(str(x.get("InterfaceAlias") or ""), f"{x['IPAddress']}/{x['PrefixLength']}")
+            for x in (j if isinstance(j, list) else [j]) if x.get("IPAddress")]
+
+
 def info_rede():
     if time.time() - _rede["t"] < 30:
         return _rede
+    if WIN and _rede["t"]:
+        if not _rede.get("lendo"):
+            _rede["lendo"] = True
+            threading.Thread(target=_le_rede, daemon=True).start()
+        return _rede
+    return _le_rede()
+
+
+def _le_rede():
     redes, ips = [], []
     try:
-        out = subprocess.run(["ip", "-4", "-o", "addr", "show"], capture_output=True, text=True, timeout=3).stdout
-        for linha in out.splitlines():
-            p = linha.split()
-            nome, cidr = p[1], p[3]
-            if re.match(r"^(lo|zt|docker|veth|br-|virbr|tun|tap|wg|tailscale)", nome):
+        for nome, cidr in (_interfaces_win() if WIN else _interfaces_linux()):
+            if re.match(r"^(lo|zt|docker|veth|br-|virbr|tun|tap|wg|tailscale)", nome) or re.search(
+                    r"(?i)loopback|zerotier|vethernet|docker|wsl|hyper-v|tailscale|wireguard|vpn|virtualbox|vmware|tap-", nome):
                 continue
             itf = ipaddress.ip_interface(cidr)
-            if not itf.ip.is_private:
+            if not itf.ip.is_private or itf.ip.is_link_local or itf.ip.is_loopback:
                 continue
             redes.append(itf.network)
             ips.append(str(itf.ip))
     except Exception:
         pass
-    _rede.update(t=time.time(), redes=redes, ips=ips)
+    _rede.update(t=time.time(), redes=redes, ips=ips, lendo=False)
     if TLS["ips"] is not None and sorted(set(ips)) != TLS["ips"]:
         threading.Thread(target=garante_tls, args=(ips,), daemon=True).start()
     return _rede
@@ -278,8 +364,22 @@ TLS = {"ctx": None, "ips": None, "erro": ""}
 _tls_trava = threading.Lock()
 
 
+def _acha_openssl():
+    achado = shutil.which("openssl")
+    if achado or not WIN:
+        return achado
+    for raiz in (os.environ.get("ProgramFiles", r"C:\Program Files"), os.environ.get("LOCALAPPDATA", "") + r"\Programs"):
+        for sub in (r"Git\usr\bin\openssl.exe", r"Git\mingw64\bin\openssl.exe"):
+            if raiz and os.path.isfile(os.path.join(raiz, sub)):
+                return os.path.join(raiz, sub)
+    return None
+
+
+OPENSSL = _acha_openssl()
+
+
 def _ossl(*args):
-    r = subprocess.run(["openssl", *args], capture_output=True, text=True, timeout=30)
+    r = subprocess.run([OPENSSL, *args], capture_output=True, text=True, timeout=30)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or "openssl failed").strip()[-300:])
 
@@ -306,7 +406,7 @@ def garante_tls(ips):
                 sips.unlink(missing_ok=True)
             valido = False
             if sips.exists() and sips.read_text().split() == alvo and sc.exists():
-                valido = subprocess.run(["openssl", "x509", "-checkend", str(30 * 86400), "-noout", "-in", str(sc)],
+                valido = subprocess.run([OPENSSL, "x509", "-checkend", str(30 * 86400), "-noout", "-in", str(sc)],
                                         capture_output=True).returncode == 0
             if not valido:
                 san = ",".join(["DNS:localhost", "IP:127.0.0.1"] + [f"IP:{ip}" for ip in alvo])
@@ -649,7 +749,7 @@ DICA_PK = ("Commands that need root: run them with plain `pkexec` (never sudo) a
 # bin/pkexec (first in the agents' PATH) registers a pkttyagent for itself only and asks for the
 # password here through a unix socket
 PK_BIN = BASE / "bin"
-PK_SOCK = (Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+PK_SOCK = (Path(os.environ.get("XDG_RUNTIME_DIR") or ("" if WIN else f"/run/user/{os.getuid()}"))
            / ("agents-web-pk.sock" if PORTA == 47830 else f"agents-web-pk-{PORTA}.sock"))
 PK = {"ok": False}
 PK_TOKENS = {}
@@ -1012,6 +1112,7 @@ class Execucao:
                     "custo": 0, "duracao": 0, "contexto": {}, "modelo": chat.get("modelo", ""), "erro": "",
                     "ts": time.time()}
         self.inicio = time.time()
+        ATIVIDADE["t"] = time.time()
         self.pk = secrets.token_hex(16)
         self.trava_in = threading.Lock()
         self.iniciou = False
@@ -1105,8 +1206,9 @@ class Execucao:
         cwd = c.get("cwd") or str(HOME)
         if not os.path.isdir(cwd):
             raise RuntimeError(f"working folder does not exist: {cwd}")
-        # setpriv --pdeathsig: if this server dies, the agent dies with it
-        cmd = ["setpriv", "--pdeathsig", "KILL", "--"] + cmd
+        # setpriv --pdeathsig: if this server dies, the agent dies with it (on Windows the tray's job object does that)
+        if SETPRIV:
+            cmd = [SETPRIV, "--pdeathsig", "KILL", "--"] + cmd
         env = env_conta(conta)
         if pk_ativo():
             PK_TOKENS[self.pk] = self
@@ -1377,13 +1479,9 @@ class Execucao:
             while time.time() < fim and self.proc.poll() is None:
                 time.sleep(0.1)
         if self.proc and self.proc.poll() is None:
-            try:
-                os.killpg(self.proc.pid, signal.SIGTERM)
-                time.sleep(1.5)
-                if self.proc.poll() is None:
-                    os.killpg(self.proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            mata_arvore(self.proc)
+            time.sleep(1.5)
+            mata_arvore(self.proc, forte=True)
 
     def finalizar(self):
         PK_TOKENS.pop(self.pk, None)
@@ -1435,6 +1533,7 @@ class Execucao:
             self.troca_automatica()
         with self.cond:
             self.acabou = True
+            ATIVIDADE["t"] = time.time()
             self.eventos.append({"t": "fim", "msg": self.msg})
             self.cond.notify_all()
 
@@ -2054,6 +2153,12 @@ def status_conta(conta, forcar=False):
 def abrir_login(conta):
     env = env_conta(conta)
     alvo = [CLAUDE, "auth", "login"] if conta["agente"] == "claude" else [AGY]
+    if WIN:
+        # a console window of its own that stays open when the sign in ends. One string: cmd.exe /s /k drops
+        # the outer quotes and keeps the inner ones, which the \" of a list would break (a path with a space)
+        subprocess.Popen(f'cmd.exe /s /k "{subprocess.list2cmdline(alvo)}"', env=env, cwd=str(HOME),
+                         creationflags=0x00000010)  # CREATE_NEW_CONSOLE
+        return
     script = shlex.join(alvo) + '; echo; read -r -p "Press Enter to close this window. " _'
     for term, pre, junto in TERMINAIS:
         if shutil.which(term):
@@ -2397,9 +2502,13 @@ def ativas_claude(conta):
         try:
             d = json.loads(p.read_text())
             pid = int(d.get("pid") or 0)
-            campos = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-            if d.get("procStart") and str(d["procStart"]) != campos[19]:
-                continue
+            if WIN:
+                if not pid_vivo(pid):
+                    continue
+            else:
+                campos = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+                if d.get("procStart") and str(d["procStart"]) != campos[19]:
+                    continue
             out[d.get("sessionId")] = d.get("name") or ""
         except (OSError, ValueError, IndexError):
             continue
@@ -2896,12 +3005,21 @@ MANIFESTO = {"name": "Agents", "short_name": "Agents", "description": "Claude Co
                        {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"}]}
 
 
-# ---------------------------------------------------------------- updates (only when asked in Settings)
+# ---------------------------------------------------------------- updates
+# Every way of installing updates itself from the release assets: install.sh (a copy per user), the .deb,
+# .rpm and pacman packages (root through pkexec), the AppImage and the Windows installer. Downloads are
+# checked against the SHA256SUMS file of the release before anything runs.
 REPO_GH, REPO_GL = "gabrielmf1998/Agents-Web", "gabriel17166/agents-web"
 INSTALADORES = {"github": f"https://raw.githubusercontent.com/{REPO_GH}/main/install.sh",
                 "gitlab": f"https://gitlab.com/{REPO_GL}/-/raw/main/install.sh"}
-ATUALIZA = {"quando": 0, "dados": None, "rodando": 0}
+# tests point this at a fake GitHub API (a /releases/latest JSON with its assets)
+API_RELEASES = os.environ.get("AGENTS_WEB_RELEASES_API", "")
+ATUALIZA = {"quando": 0, "dados": None, "rodando": 0, "erro": "", "fase": ""}
 ATUALIZA_LOG = DATA / "update.log"
+TIPOS = ("script", "deb", "rpm", "pacman", "appimage", "windows")
+# needs no password, so it can update by itself
+SOZINHA = ("script", "appimage", "windows")
+ATIVIDADE = {"t": time.time()}
 
 
 def origem():
@@ -2916,53 +3034,285 @@ def _vt(v):
     return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3]) or (0,)
 
 
+def instalacao():
+    """How this copy was installed (one of TIPOS), or "" for a git checkout, which updates with git."""
+    try:
+        k = (BASE / "install-kind").read_text().strip()
+    except OSError:
+        k = ""
+    if k == "appimage" and not os.environ.get("APPIMAGE"):
+        k = ""
+    if k in TIPOS:
+        return k
+    # 1.8 and older: install.sh copied itself next to the server
+    return "script" if (BASE / "install.sh").is_file() and (BASE / "agents-web-tray").is_file() else ""
+
+
 def instalado():
-    # an installed copy (the installer put itself next to the server), not a git checkout
-    return (BASE / "install.sh").is_file() and (BASE / "agents-web-tray").is_file()
+    return bool(instalacao())
+
+
+def maquina():
+    m = platform.machine().lower()
+    return {"amd64": "x86_64", "x64": "x86_64", "arm64": "aarch64"}.get(m, m)
+
+
+def _nome_asset(tipo, v):
+    m = maquina()
+    return {"script": rf"agents-web-{v}-linux-{m}\.tar\.gz",
+            "deb": rf"agents-web_{v}_{'amd64' if m == 'x86_64' else 'arm64' if m == 'aarch64' else m}\.deb",
+            "rpm": rf"agents-web-{v}-\d+\.{m}\.rpm",
+            "pacman": rf"agents-web-{v}-\d+-{m}\.pkg\.tar\.zst",
+            "appimage": rf"Agents_Web-{v}-{m}\.AppImage",
+            "windows": rf"AgentsWeb-Setup-{v}\.exe"}[tipo]
+
+
+def _baixa_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "agents-web", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as f:
+        return json.loads(f.read())
 
 
 def checar_atualizacao(forcar=False):
     if ATUALIZA["dados"] and not forcar and time.time() - ATUALIZA["quando"] < 600:
         return ATUALIZA["dados"]
     o = origem()
-    if o == "gitlab":
+    if API_RELEASES:
+        url = API_RELEASES
+    elif o == "gitlab":
         url = f"https://gitlab.com/api/v4/projects/{urllib.parse.quote(REPO_GL, safe='')}/releases/permalink/latest"
     else:
         url = f"https://api.github.com/repos/{REPO_GH}/releases/latest"
-    req = urllib.request.Request(url, headers={"User-Agent": "agents-web", "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=15) as f:
-            j = json.loads(f.read())
+        j = _baixa_json(url)
     except Exception as e:
         raise ValueError(f"could not reach {'GitLab' if o == 'gitlab' else 'GitHub'}: {e}")
     tag = str(j.get("tag_name") or "")
+    # GitHub lists assets with their download URL, GitLab as release links
+    assets = {a["name"]: {"url": a.get("browser_download_url"), "digest": a.get("digest") or ""}
+              for a in j.get("assets") or [] if isinstance(a, dict) and a.get("browser_download_url")}
+    for l in ((j.get("assets") or {}).get("links") or []) if isinstance(j.get("assets"), dict) else []:
+        assets[l.get("name")] = {"url": l.get("direct_asset_url") or l.get("url"), "digest": ""}
+    tipo = instalacao()
+    arquivo = bool(tipo) and any(n and re.match(_nome_asset(tipo, re.escape(tag.lstrip("v"))) + "$", n) for n in assets)
     dados = {"atual": VERSAO, "ultima": tag.lstrip("v"), "nova": _vt(tag) > _vt(VERSAO),
              "notas": str(j.get("body") or j.get("description") or "")[:8000],
              "url": j.get("html_url") or (j.get("_links") or {}).get("self") or "",
-             "data": j.get("published_at") or j.get("released_at") or "", "origem": o, "instalavel": instalado()}
-    ATUALIZA.update(quando=time.time(), dados=dados)
+             "data": j.get("published_at") or j.get("released_at") or "", "origem": o, "instalavel": bool(tipo),
+             "tipo": tipo, "arquivo": arquivo, "sozinha": arquivo and tipo in SOZINHA and _pode_escrever(),
+             "senha": tipo in ("deb", "rpm", "pacman"), "maquina": maquina()}
+    ATUALIZA.update(quando=time.time(), dados=dados, assets=assets)
     return dados
 
 
-def atualizar():
-    if not instalado():
-        raise ValueError("this copy was not installed by install.sh, update it with git")
-    rod = sum(1 for e in EXECS.values() if not e.acabou)
-    if rod:
+def _pode_escrever():
+    # the AppImage replaces its own file, so its folder must be writable
+    if instalacao() == "appimage":
+        return os.access(os.path.dirname(os.environ.get("APPIMAGE", "/")) or "/", os.W_OK)
+    return True
+
+
+def _registra(texto):
+    with open(ATUALIZA_LOG, "a", encoding="utf-8") as f:
+        f.write(f"== {time.strftime('%Y-%m-%d %H:%M:%S')} {texto}\n")
+
+
+def _baixa(url, destino, esperado=""):
+    h = hashlib.sha256()
+    req = urllib.request.Request(url, headers={"User-Agent": "agents-web"})
+    with urllib.request.urlopen(req, timeout=60) as f, open(destino, "wb") as o:
+        while True:
+            b = f.read(1 << 20)
+            if not b:
+                break
+            h.update(b)
+            o.write(b)
+    if esperado and h.hexdigest() != esperado:
+        destino.unlink(missing_ok=True)
+        raise ValueError(f"the download of {destino.name} does not match its SHA256 sum, nothing was installed")
+    return h.hexdigest()
+
+
+def baixar_versao(d):
+    """Download this install's asset of the release in `d` and check it against SHA256SUMS."""
+    tipo = d["tipo"]
+    assets = ATUALIZA.get("assets") or {}
+    padrao = re.compile(_nome_asset(tipo, re.escape(d["ultima"])) + "$")
+    nome = next((n for n in assets if n and padrao.match(n)), None)
+    if not nome:
+        raise ValueError(f"release {d['ultima']} has no file for this kind of install ({tipo}, {maquina()})")
+    somas = {}
+    if "SHA256SUMS" in assets:
+        texto = urllib.request.urlopen(urllib.request.Request(assets["SHA256SUMS"]["url"], headers={
+            "User-Agent": "agents-web"}), timeout=30).read().decode()
+        somas = {p[1].lstrip("*"): p[0].lower() for p in (l.split() for l in texto.splitlines()) if len(p) == 2}
+    esperado = somas.get(nome) or assets[nome]["digest"].replace("sha256:", "")
+    if not esperado:
+        raise ValueError(f"release {d['ultima']} has no SHA256 sum for {nome}, so it was not installed")
+    pasta = DATA / "updates"
+    shutil.rmtree(pasta, ignore_errors=True)
+    pasta.mkdir(parents=True)
+    arq = pasta / nome
+    _registra(f"downloading {assets[nome]['url']}")
+    _baixa(assets[nome]["url"], arq, esperado)
+    _registra(f"{nome}: SHA256 {esperado} checked")
+    return arq
+
+
+def _gerenciador(arq):
+    """The command that installs a downloaded package with this system's package manager."""
+    n = arq.name
+    if n.endswith(".deb"):
+        return ["apt-get", "install", "-y", "--allow-downgrades", str(arq)] if shutil.which("apt-get") \
+            else ["dpkg", "-i", str(arq)]
+    if n.endswith(".rpm"):
+        for pm, cmd in (("dnf5", ["dnf5", "install", "-y", str(arq)]), ("dnf", ["dnf", "install", "-y", str(arq)]),
+                        ("zypper", ["zypper", "--non-interactive", "install", "--allow-unsigned-rpm", str(arq)]),
+                        ("yum", ["yum", "install", "-y", str(arq)])):
+            if shutil.which(pm):
+                return cmd
+        return ["rpm", "-U", "--replacepkgs", str(arq)]
+    return ["pacman", "-U", "--noconfirm", "--needed", str(arq)]
+
+
+def ocioso():
+    return not any(not e.acabou for e in EXECS.values())
+
+
+def atualizar(auto=False):
+    tipo = instalacao()
+    if not tipo:
+        raise ValueError("this copy was not installed by install.sh, a package or the installer, update it with git")
+    if not ocioso():
+        rod = sum(1 for e in EXECS.values() if not e.acabou)
         raise ValueError(f"wait for the running {'reply' if rod == 1 else f'{rod} replies'} to finish, or stop "
                          f"{'it' if rod == 1 else 'them'}: updating restarts the service")
-    if time.time() - ATUALIZA["rodando"] < 120:
+    if time.time() - ATUALIZA["rodando"] < 300:
         raise ValueError("an update is already running")
-    o = origem()
-    script = (f"exec >>{shlex.quote(str(ATUALIZA_LOG))} 2>&1 </dev/null; sleep 1; "
-              f"echo \"== $(date) update from {o}\"; curl -fsSL {shlex.quote(INSTALADORES[o])} "
-              f"| bash -s -- --no-deps{' --gitlab' if o == 'gitlab' else ''}")
+    d = checar_atualizacao(forcar=True)
+    if not d["nova"]:
+        raise ValueError(f"{VERSAO} is already the latest version")
+    ATUALIZA.update(rodando=time.time(), erro="", fase="download")
+    threading.Thread(target=_atualiza, args=(d, auto), daemon=True).start()
+
+
+def _atualiza(d, auto):
+    tipo = d["tipo"]
+    try:
+        _registra(f"update {VERSAO} to {d['ultima']} ({tipo}{', automatic' if auto else ''})")
+        arq = baixar_versao(d)
+        ATUALIZA["fase"] = "install"
+        if tipo == "windows":
+            _aplica_windows(arq)
+        elif tipo in ("deb", "rpm", "pacman"):
+            _aplica_pacote(arq)
+        elif tipo == "appimage":
+            _aplica_appimage(arq)
+            _espera_fim()
+        else:
+            _aplica_script(arq)
+            _espera_fim()
+    except Exception as e:
+        _registra(f"failed: {e}")
+        ATUALIZA.update(rodando=0, erro=str(e)[:600], fase="")
+
+
+def _espera_fim():
+    # the installer (or the AppImage) stops the tray, and with it this server, within seconds
+    time.sleep(float(os.environ.get("AGENTS_WEB_UPDATE_WAIT") or 240))
+    raise ValueError(f"the update did not restart Agents Web, see {ATUALIZA_LOG}")
+
+
+def _extrai(arq):
+    import tarfile
+    pasta = arq.parent / "src"
+    pasta.mkdir()
+    with tarfile.open(arq) as tf:
+        for m in tf.getmembers():
+            if m.name.startswith("/") or ".." in Path(m.name).parts or not (m.isfile() or m.isdir()):
+                raise ValueError(f"unexpected entry in {arq.name}: {m.name}")
+        tf.extractall(pasta, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
+    raiz = next((p for p in pasta.iterdir() if (p / "install.sh").is_file()), None)
+    if not raiz:
+        raise ValueError(f"{arq.name} has no install.sh")
+    return raiz
+
+
+def _aplica_script(arq):
+    # the new release's own install.sh puts the new files in place and restarts the tray
+    raiz = _extrai(arq)
+    _em_unidade(f"bash {shlex.quote(str(raiz / 'install.sh'))} --from {shlex.quote(str(raiz))} --no-deps"
+                + (" --gitlab" if origem() == "gitlab" else ""))
+
+
+def _aplica_appimage(arq):
+    alvo = Path(os.environ["APPIMAGE"])
+    os.chmod(arq, 0o755)
+    novo = alvo.with_name(f".{alvo.name}.new")
+    shutil.copy2(arq, novo)
+    os.replace(novo, alvo)
+    _registra(f"replaced {alvo}")
+    _em_unidade(f"{shlex.quote(str(alvo))} restart")
+
+
+def _aplica_pacote(arq):
+    cmd = _gerenciador(arq)
+    if os.geteuid() != 0:
+        pk = shutil.which("pkexec")
+        if not pk:
+            raise ValueError("pkexec was not found, install the package yourself: sudo " + shlex.join(cmd))
+        cmd = [pk] + cmd
+    _registra("running " + shlex.join(cmd))
+    ATUALIZA["fase"] = "senha"
+    with open(ATUALIZA_LOG, "a", encoding="utf-8") as log:
+        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, timeout=1800)
+    if r.returncode != 0:
+        raise ValueError(("the password was not given or was wrong" if r.returncode in (126, 127) and cmd[0].endswith("pkexec")
+                          else f"{cmd[1] if cmd[0].endswith('pkexec') else cmd[0]} failed with code {r.returncode}")
+                         + f", see {ATUALIZA_LOG}. You can also run: sudo {shlex.join(_gerenciador(arq))}")
+    _registra("package installed, restarting the server")
+    ATUALIZA["fase"] = "reinicio"
+    reiniciar_servidor()
+
+
+def reiniciar_servidor():
+    """Run the new server.py in this same process: the tray keeps watching the same PID."""
+    time.sleep(0.5)
+    try:
+        if PK["ok"]:
+            PK_SOCK.unlink(missing_ok=True)
+    except OSError:
+        pass
+    sys.stdout.flush()
+    os.execv(sys.executable, [sys.executable, "-u", str(BASE / "server.py")])
+
+
+SAIDA_ATUALIZA = 75   # exit code that tells AgentsWeb.exe to run the installer named in updates\\setup.txt
+
+
+def _aplica_windows(arq, terminal=False):
+    """Run the downloaded installer (/S /UPDATE): it stops the tray, copies the new files and starts the tray again.
+    Under the tray the server is inside the tray's job object, which the installer must not be part of (stopping
+    the tray kills the job), so the tray starts it: this server writes its path and exits with SAIDA_ATUALIZA."""
+    if not terminal and os.environ.get("AGENTS_WEB_TRAY"):
+        (arq.parent / "setup.txt").write_text(str(arq), encoding="utf-8")
+        _registra(f"asking the tray to run {arq.name} /S /UPDATE")
+        ATUALIZA["fase"] = "reinicio"
+        time.sleep(0.5)
+        sys.stdout.flush()
+        os._exit(SAIDA_ATUALIZA)
+    _registra(f"starting {arq.name} /S /UPDATE")
+    flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen([str(arq), "/S", "/UPDATE"], cwd=str(arq.parent), creationflags=flags, close_fds=True)
+
+
+def _em_unidade(comando):
+    script = (f"exec >>{shlex.quote(str(ATUALIZA_LOG))} 2>&1 </dev/null; sleep 1; {comando}")
     if not _atualizar_unidade(script):
         # its own session: the tray stops this server's whole process group while it reinstalls
         subprocess.Popen(["bash", "-c", script], cwd=str(HOME), stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
                          close_fds=True)
-    ATUALIZA["rodando"] = time.time()
 
 
 def _atualizar_unidade(script):
@@ -2975,7 +3325,8 @@ def _atualizar_unidade(script):
     cmd = [sr, "--user", "--collect", "--quiet", "-p", "ExitType=cgroup", f"--unit=agents-web-update-{int(time.time())}",
            f"--working-directory={HOME}"]
     for k in ("PATH", "HOME", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
-              "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "LANG"):
+              "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "LANG", "AGENTS_WEB_PORT", "AGENTS_WEB_CONFIG_DIR",
+              "AGENTS_WEB_DATA_DIR", "AGENTS_WEB_RELEASES_API"):
         if os.environ.get(k):
             cmd.append(f"--setenv={k}={os.environ[k]}")
     try:
@@ -2984,6 +3335,69 @@ def _atualizar_unidade(script):
     except (OSError, subprocess.TimeoutExpired):
         return False
     return r.returncode == 0
+
+
+def resumo_atualizacao():
+    d = ATUALIZA["dados"] or {}
+    return {"ultima": d.get("ultima", ""), "nova": bool(d.get("nova")), "tipo": instalacao(),
+            "sozinha": bool(d.get("sozinha")), "senha": bool(d.get("senha")), "erro": ATUALIZA["erro"],
+            "fase": ATUALIZA["fase"], "rodando": bool(ATUALIZA["rodando"])}
+
+
+def vigia_atualizacoes():
+    """Look for a new release a while after start and then twice a day. With automatic updates, install it
+    at a quiet moment (no reply running for 10 minutes); installs that need a password only say so."""
+    time.sleep(float(os.environ.get("AGENTS_WEB_UPDATE_DELAY") or 120))
+    ultima = 0
+    while True:
+        modo = CFG["padrao"].get("atualizar", "auto")
+        if modo != "nao" and instalado():
+            try:
+                if time.time() - ultima > 12 * 3600:
+                    checar_atualizacao(forcar=True)
+                    ultima = time.time()
+                d = ATUALIZA["dados"]
+                if (modo == "auto" and d and d["nova"] and d["sozinha"] and not ATUALIZA["rodando"]
+                        and not ATUALIZA["erro"] and ocioso()
+                        and time.time() - ATIVIDADE["t"] > float(os.environ.get("AGENTS_WEB_UPDATE_IDLE") or 600)):
+                    atualizar(auto=True)
+            except Exception as e:
+                print(f"update check failed: {e}", flush=True)
+        time.sleep(float(os.environ.get("AGENTS_WEB_UPDATE_EVERY") or 300))
+
+
+def atualizar_terminal():
+    """`agents-web update`: the same update, in the terminal, with sudo for packages."""
+    tipo = instalacao()
+    if not tipo:
+        sys.exit("this copy is a git checkout, update it with git pull")
+    d = checar_atualizacao(forcar=True)
+    if not d["nova"]:
+        print(f"Agents Web {VERSAO} is the latest version.")
+        return
+    print(f"Updating Agents Web {VERSAO} to {d['ultima']} ({tipo})")
+    arq = baixar_versao(d)
+    print(f"Downloaded {arq.name}, SHA256 checked")
+    if tipo in ("deb", "rpm", "pacman"):
+        cmd = _gerenciador(arq)
+        if os.geteuid() != 0:
+            cmd = (["sudo"] if shutil.which("sudo") else ["pkexec"]) + cmd
+        print("+ " + shlex.join(cmd), flush=True)
+        r = subprocess.run(cmd)
+        if r.returncode:
+            sys.exit(r.returncode)
+        print("Installed. Run 'agents-web restart' if it is running.")
+    elif tipo == "appimage":
+        _aplica_appimage(arq)
+        print("Done, Agents Web restarts by itself.")
+    elif tipo == "windows":
+        _aplica_windows(arq, terminal=True)
+        print("The installer is running, Agents Web starts again when it ends.")
+    else:
+        raiz = _extrai(arq)
+        sys.exit(subprocess.run(["bash", str(raiz / "install.sh"), "--from", str(raiz), "--no-deps"]
+                                + (["--gitlab"] if origem() == "gitlab" else [])).returncode)
+
 
 
 # ---------------------------------------------------------------- HTTP
@@ -3000,7 +3414,8 @@ input{font:600 24px ui-monospace,monospace;letter-spacing:8px;text-align:center}
 
 class Servidor(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    # on Windows SO_REUSEADDR lets a second server take the same port
+    allow_reuse_address = not WIN
 
     def process_request_thread(self, request, client_address):
         # same port for http and https: a first byte of 0x16 is a TLS ClientHello
@@ -3277,7 +3692,8 @@ class H(http.server.BaseHTTPRequestHandler):
         partes = p.strip("/").split("/")[1:]
         if partes == ["estado"]:
             contas = [{**c, "status": (_status_contas.get(c["id"]) or {}).get("s")} for c in CFG["contas"]]
-            return self.resp(200, {"versao": VERSAO, "contas": contas, "chats": listar_chats(), "limites": LIMITES,
+            return self.resp(200, {"versao": VERSAO, "atualizacao": resumo_atualizacao(), "windows": WIN,
+                                   "log_atualizacao": str(ATUALIZA_LOG), "contas": contas, "chats": listar_chats(), "limites": LIMITES,
                                    "padrao": CFG["padrao"], "local": self.local, "ips": info_rede()["ips"], "porta": PORTA,
                                    "home": str(HOME), "tls": bool(TLS["ctx"]), "seguro": self.tls,
                                    "pedidos": pk_pendentes(), "root": PK["ok"], "fixados": CFG.get("fixados") or [],
@@ -3331,7 +3747,8 @@ class H(http.server.BaseHTTPRequestHandler):
             d = self.corpo_json()
             return self.resp(200, {"fixados": fixar(d.get("id"), bool(d.get("fixo")))})
         if partes == ["atualizacao"]:
-            return self.resp(200, checar_atualizacao(self.q.get("forcar", ["0"])[0] == "1"))
+            d = checar_atualizacao(self.q.get("forcar", ["0"])[0] == "1")
+            return self.resp(200, {**d, **resumo_atualizacao()})
         if partes == ["atualizar"] and metodo == "POST":
             atualizar()
             return self.resp(200, {"ok": True})
@@ -3351,6 +3768,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 for k in ("dica", "root", "titulos", "troca_auto", "memoria_unica"):
                     if k in d:
                         CFG["padrao"][k] = bool(d[k])
+                if d.get("atualizar") in ("auto", "avisar", "nao"):
+                    CFG["padrao"]["atualizar"] = d["atualizar"]
+                    ATUALIZA["erro"] = ""
                 salvar_json(CFG_FILE, CFG)
             if d.get("memoria_unica"):
                 threading.Thread(target=unir_memorias, daemon=True).start()
@@ -3617,19 +4037,12 @@ def encerrar(*_):
     for ex in list(EXECS.values()):
         if not ex.acabou and ex.proc and ex.proc.poll() is None:
             ex.parado = True
-            try:
-                os.killpg(ex.proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+            mata_arvore(ex.proc)
     t0 = time.time()
     while time.time() - t0 < 3 and any(not e.acabou for e in EXECS.values()):
         time.sleep(0.1)
     for ex in list(EXECS.values()):
-        if ex.proc and ex.proc.poll() is None:
-            try:
-                os.killpg(ex.proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        mata_arvore(ex.proc, forte=True)
     if PK["ok"]:
         try:
             PK_SOCK.unlink()
@@ -3639,16 +4052,25 @@ def encerrar(*_):
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--update"]:
+        try:
+            atualizar_terminal()
+        except ValueError as e:
+            sys.exit(f"agents-web: {e}")
+        sys.exit(0)
     signal.signal(signal.SIGTERM, encerrar)
     signal.signal(signal.SIGINT, encerrar)
-    signal.signal(signal.SIGHUP, encerrar)
-    if shutil.which("openssl"):
+    if not WIN:
+        signal.signal(signal.SIGHUP, encerrar)
+    if OPENSSL:
         garante_tls(info_rede()["ips"])
-    if shutil.which("pkttyagent") and (PK_BIN / "pkexec").exists():
+    # the in-page root approvals wrap pkexec with a small script run by the system's /usr/bin/python3
+    if not WIN and shutil.which("pkttyagent") and (PK_BIN / "pkexec").exists() and os.path.exists("/usr/bin/python3"):
         threading.Thread(target=pk_servidor, daemon=True).start()
     threading.Thread(target=lambda: lista_cli(), daemon=True).start()
     threading.Thread(target=limpar_vazios, daemon=True).start()
     threading.Thread(target=unir_memorias, daemon=True).start()
+    threading.Thread(target=vigia_atualizacoes, daemon=True).start()
     srv = Servidor(("0.0.0.0", PORTA), H)
     print(f"Agents Web {VERSAO} on http://127.0.0.1:{PORTA}", flush=True)
     srv.serve_forever()
