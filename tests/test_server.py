@@ -195,7 +195,9 @@ class Servidor:
         run.mkdir(mode=0o700)
         self.porta = porta_livre()
         env = {"HOME": str(self.home), "PATH": f"{binarios}:/usr/bin:/bin", "XDG_RUNTIME_DIR": str(run),
-               "AGENTS_WEB_PORT": str(self.porta), "LANG": "C.UTF-8"}
+               "AGENTS_WEB_PORT": str(self.porta), "LANG": "C.UTF-8",
+               # never ask GitHub for releases: an installed copy under test would really update itself
+               "AGENTS_WEB_RELEASES_API": (self.tmp / "no-release.json").as_uri()}
         self.log = open(self.tmp / "server.log", "w")
         self.proc = subprocess.Popen([sys.executable, "-I", "-u", str(SERVIDOR)], env=env, cwd=str(self.tmp),
                                      stdout=self.log, stderr=subprocess.STDOUT)
@@ -935,7 +937,8 @@ class TestServidor(unittest.TestCase):
             self.assertEqual((st, b[:len(ini)]), (200, ini), nome)
 
     def test_atualizar_fora_da_instalacao(self):
-        # a checkout is not an installed copy, so it never updates itself
+        # a checkout is not an installed copy, so it never updates itself, and an installed copy (the package
+        # tests in CI) finds no release here
         r = self.s.pedir("POST", "/api/atualizar", {}, {"X-Token": self.s.token})
         self.assertEqual(r[0], 400)
 
