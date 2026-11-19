@@ -129,6 +129,17 @@ AI after the guest) before the `fim` event, like the queue. The chat's AI turns 
 message of yours. Stop, an error, or `chats/<id>/debate` ends it. `fim` carries `segue: true` when another
 turn already started, so the page does not notify every turn.
 
+Join mode (`modo: "junto"`) sets `duo: true` in the chat. After each reply of the chat's own AI to a message of
+yours, `finalizar` starts the guest turn (`seguir_duo`) before the queue and the debate, so a queued message
+waits for both replies. The guest gets a team note (answer after the chat's AI, build on its reply, do not
+repeat it) and the chat's AI is told the guest answers after it. If the guest cannot run, an error reply is
+saved under its name, `duo` becomes false and the queue goes on. `chats/<id>/convidado` changes the guest's
+model or effort (refused while the guest is writing) or ends the team with `sair`. The page reads `duo` and the
+two agents to pick the joined theme.
+
+Each saved reply carries `effort`, from `esforco_resposta`: for Claude the chat's effort or, when unset, the
+account's default in `settings.json`; for Antigravity the effort suffix of the model id.
+
 The guest's permission mode follows the chat's own mode (`PERM_PAR` maps between the two CLIs, modes with no
 match become Plan), and its approvals (`Always allow`) stay with the guest. Editing and forking skip the guest
 part: a branch starts at the last reply of the chat's own AI, and the guest part is passed along again.
@@ -243,7 +254,8 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/parar` | POST | stop the running reply |
 | `chats/<id>/config` | POST | rename, change model, effort, permission mode, account or folder |
 | `chats/<id>/fila` | POST | edit, reorder or clear queued messages |
-| `chats/<id>/convidar` | POST | call another AI into the chat (`agente`, `conta`, `modelo`, optional `texto`, `rodadas` 0 for one reply or 2 to 10 for a debate) |
+| `chats/<id>/convidar` | POST | call another AI into the chat (`agente`, `conta`, `modelo`, `effort` for Claude, optional `texto`, `modo` `junto`, `uma` or `debate`, `rodadas` 2 to 10 for a debate) |
+| `chats/<id>/convidado` | POST | change the guest's `modelo` or `effort`, or `sair: true` to end join mode |
 | `chats/<id>/debate` | POST | end the debate after the reply that is running |
 | `chats/<id>/duplicar` | POST | copy a chat |
 | `chats/<id>/reenviar` | POST | edit or retry message `indice` (`texto`, or `null` to resend it as it was) |

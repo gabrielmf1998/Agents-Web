@@ -14,7 +14,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 ## Features
 
 - **Both agents, one page.** Switch between Claude Code and Antigravity per chat, each with its own theme.
-- **Call another AI.** A button in the chat header brings a second AI into the conversation: Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. It reads the chat so far and replies right there with its own name and color, for one reply or for a debate where the two take turns by themselves.
+- **Call another AI.** A button in the chat header brings a second AI into the conversation: Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. It can join the chat as a team (every message goes to both, under a joined theme with both marks), answer once, or debate the chat's AI by itself. Each reply shows who wrote it, with its model, effort and color.
 - **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices. When one account reaches its usage limit, the chat continues the same conversation on another one, with one click or by itself. All accounts share one Claude memory.
 - **Real usage limits.** Shows session and weekly limits as reported by the CLIs themselves, plus tokens per model.
 - **Terminal conversations.** Your existing `claude` and `agy` sessions show up in the sidebar. You can open, continue, rename or delete them, and a Claude chat can move to another working folder.
@@ -213,16 +213,22 @@ run agents in folders you trust.
 ### Call another AI
 
 **Call another AI**, in the chat header, brings a second AI into the chat you are in. Pick who (Antigravity,
-Claude, or another Claude account), the model, and optionally what it should do. Left empty, it gives its own
-view on the last reply.
+Claude, or another Claude account), the model, the effort (for Claude) and how it takes part.
 
-- **One reply.** It reads the chat so far and answers in the same chat, under its own name and with a colored
-  line beside its reply. The chat's own AI gets that answer, and your message to it, along with your next
+- **Join the chat** (the default). The two work as a team: each message you send goes to both, the chat's own
+  AI answers first and the other one right after, with that reply in front of it, so it builds on it instead of
+  repeating it. The page switches to a joined theme with both marks, and the header shows both AIs with the
+  guest's model, effort and a **Leave** button. Queued messages wait for both replies.
+- **One reply.** It reads the chat so far and answers once, about what you ask it or, left empty, with its own
+  view on the last reply. The chat's own AI gets that answer, and your message to it, along with your next
   message.
 - **Debate.** The two take turns by themselves for 2 to 10 rounds (one reply from each per round), answering
   each other's points. A bar above the message box shows the progress. **End after this reply** lets the reply
   being written finish and stops there, and Stop ends it at once. A message you send during a debate waits for
   the current reply, goes to the chat's own AI, and the debate then goes on.
+
+Every reply shows the AI, the model and the effort that wrote it, and in chats with two AIs each has its own
+color line (orange for Claude, blue to purple for Antigravity).
 
 Each AI keeps its own CLI session, so calling the same one again only sends what it has not seen yet. It never
 gets more freedom than the chat: its permission mode follows the chat's one (Plan stays Plan, for example).

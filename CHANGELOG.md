@@ -1,23 +1,32 @@
 # Changelog
 
-## 2.1.0 (2026-11-19)
+## 2.2.0 (2026-11-19)
 
 New
 
 - **Call another AI.** A new button in the chat header brings a second AI into the conversation you are in:
   Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. Pick who, the
-  model and, if you want, what it should do (left empty, it gives its own view on the last reply). It reads
-  the chat so far and answers right there, under its own name, with a colored line beside its reply, and your
-  message to it shows "You to Antigravity". The chat's own AI gets that answer with your next message.
+  model, the effort (for Claude) and how it takes part. It reads the chat so far and answers right there, under
+  its own name.
+- **Join the chat, the two AIs as a team.** With **Join the chat** (the default), every message you send goes
+  to both: the chat's own AI answers first and the other one answers right after, with that reply in front of
+  it, building on it, fixing what is wrong and adding what is missing instead of repeating it. The page takes a
+  joined theme with both marks side by side and a mixed accent color, the box says "Message Claude and
+  Antigravity", and the header shows both AIs, with the guest's model and effort and a **Leave** button. If the
+  other AI cannot answer (its account was removed, for example) it leaves the chat with a note and your queued
+  messages go on.
+- **Every reply says who wrote it.** Replies carry the model and effort that wrote them, and in chats with two
+  AIs each one has its own color line (orange for Claude, blue to purple for Antigravity).
+- **One reply.** The other AI answers once, about the last reply or about what you ask it, and your message to
+  it shows "You to Antigravity". The chat's own AI gets that answer with your next message.
 - **Debates.** Choose Debate and 2 to 10 rounds, and the two AIs take turns by themselves, answering each
   other's points, while you watch. A bar above the message box shows "Debate with Antigravity, reply 3 of 6"
   and has **End after this reply**. Stop ends it at once, and a message you send in the middle waits for the
   current reply, goes to the chat's own AI, and then the debate goes on. You get one notification at the end,
   not one per turn.
-- Each AI keeps its own session, so calling the same one again only sends what it has not seen yet. It never
-  gets more freedom than the chat: a chat in Plan mode calls the other AI in Plan mode too. Edit, Retry and
-  Fork keep working in chats with another AI, and deleting a chat with its sessions also deletes the other
-  AI's sessions.
+- Each AI keeps its own session, so the other one only gets what it has not seen yet. It never gets more
+  freedom than the chat: a chat in Plan mode calls the other AI in Plan mode too. Edit, Retry and Fork keep
+  working in chats with another AI, and deleting a chat with its sessions also deletes the other AI's sessions.
 
 ## 2.0.0 (2026-11-16)
 

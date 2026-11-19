@@ -1174,6 +1174,99 @@ class TestServidor(unittest.TestCase):
         args = self.s.args_agy()[-1]
         self.assertIn("--dangerously-skip-permissions", args)
 
+    # ---------------------------------------------------------------- duo chats
+    def test_duo_as_duas_respondem_cada_mensagem(self):
+        c = self.novo_chat(effort="high")
+        r = self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "modo": "junto",
+                                                           "modelo": "gemini-3.8-flash-low"})
+        self.assertFalse(r["rodando"])   # joining an empty chat waits for your message
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        self.assertTrue(chat["duo"])
+        self.assertEqual(chat["mensagens"], [])
+        self.assertEqual(next(x for x in self.s.api("/api/estado")["chats"] if x["id"] == c["id"])["duo"], "agy")
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "plan a trip"})
+        chat = self.espera_n(c["id"], 3)
+        quem = [m["papel"] + ("/" + m["convidado"]["agente"] if m.get("convidado") else "") for m in chat["mensagens"]]
+        self.assertEqual(quem, ["usuario", "assistente", "assistente/agy"])
+        host, conv = chat["mensagens"][1], chat["mensagens"][2]
+        self.assertTrue(conv.get("duo"))
+        self.assertEqual(host["effort"], "high")
+        self.assertEqual(conv["effort"], "low")
+        # Claude knows it has a teammate; the other AI gets the message and Claude's reply, and works on top of it
+        self.assertIn("Antigravity is in this chat with you as a team", self.ultimo_prompt_claude())
+        self.assertTrue(self.ultimo_prompt_claude().endswith("The user's new message:\nplan a trip"))
+        args = self.s.args_agy()[-1]
+        self.assertEqual(args[args.index("--model") + 1], "gemini-3.8-flash-low")
+        prompt = args[args.index("-p") + 1]
+        self.assertIn("### User\nplan a trip", prompt)
+        self.assertIn("### Claude\necho:", prompt)
+        self.assertIn("You and Claude are a team", prompt)
+        self.assertNotIn("Give your own view", prompt)
+        # next message: Claude gets the other AI's reply first, the other AI only what is new
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "cheaper please"})
+        chat = self.espera_n(c["id"], 6)
+        self.assertEqual(len(chat["mensagens"]), 6)
+        self.assertIn("### Antigravity\nagy:", self.ultimo_prompt_claude())
+        args = self.s.args_agy()[-1]
+        prompt = args[args.index("-p") + 1]
+        self.assertEqual(args[args.index("--conversation") + 1], "agy-conv-1")
+        self.assertNotIn("plan a trip", prompt)
+        self.assertIn("### User\ncheaper please", prompt)
+        # leaving: Claude alone again
+        n = len(self.s.args_agy())
+        chat = self.s.api(f"/api/chats/{c['id']}/convidado", {"sair": True})
+        self.assertFalse(chat["duo"])
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "solo"})
+        chat = self.espera_n(c["id"], 8)
+        time.sleep(0.5)
+        self.assertEqual(len(self.s.api(f"/api/chats/{c['id']}")["mensagens"]), 8)
+        self.assertEqual(len(self.s.args_agy()), n)
+
+    def test_duo_fila_espera_as_duas(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "modo": "junto"})
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "slow first"})
+        r = self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "second"})
+        self.assertEqual(r.get("fila"), 1)
+        chat = self.espera_n(c["id"], 6, 40)
+        quem = [("agy" if m.get("convidado") else "claude") if m["papel"] == "assistente" else m["texto"]
+                for m in chat["mensagens"]]
+        self.assertEqual(quem, ["slow first", "claude", "agy", "second", "claude", "agy"])
+
+    def test_duo_com_texto_e_ajustes(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hi"})
+        self.s.espera_parado(c["id"])
+        r = self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": "claude1", "modo": "junto",
+                                                           "texto": "say hello", "effort": "low"})
+        self.assertTrue(r["rodando"])
+        chat = self.espera_n(c["id"], 4)
+        self.assertEqual(chat["mensagens"][-1]["effort"], "low")
+        ultimo = self.s.args_claude()[-1]
+        self.assertEqual(ultimo[ultimo.index("--effort") + 1], "low")
+        chat = self.s.api(f"/api/chats/{c['id']}/convidado", {"effort": "max", "modelo": "haiku"})
+        self.assertEqual((chat["convidado"]["effort"], chat["convidado"]["modelo"]), ("max", "haiku"))
+        self.assertEqual(chat["convidado"]["nome"], "Claude (haiku)")
+        self.s.api(f"/api/chats/{c['id']}/convidado", {"effort": "nope"})
+        self.assertEqual(self.s.api(f"/api/chats/{c['id']}")["convidado"]["effort"], "")
+
+    def test_duo_convidado_que_nao_pode_responder_libera_a_fila(self):
+        self.s.api("/api/contas/nova", {"agente": "claude", "nome": "Duo Gone"})
+        cid_conta = next(x["id"] for x in self.s.api("/api/estado")["contas"] if x["nome"] == "Duo Gone")
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": cid_conta, "modo": "junto"})
+        self.s.api("/api/contas/editar", {"id": cid_conta, "remover": True})
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "slow one"})
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "two"})
+        chat = self.espera_n(c["id"], 5, 30)
+        quem = [m["papel"] + ("/erro" if m.get("erro") else "") for m in chat["mensagens"]]
+        self.assertEqual(quem, ["usuario", "assistente", "assistente/erro", "usuario", "assistente"])
+        self.assertIn("could not answer", chat["mensagens"][2]["erro"])
+        self.assertFalse(chat["duo"])
+        # joining with an account that is gone is refused at once
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": cid_conta, "modo": "junto"},
+                   esperado=400)
+
 
 if __name__ == "__main__":
     unittest.main()

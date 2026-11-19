@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes, p
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "2.1.0"
+VERSAO = "2.2.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 WIN = os.name == "nt"
@@ -635,6 +635,7 @@ def resumo_chat(c):
             "tokens": tot["total"], "fila": len(c.get("fila") or []), "sessao": c.get("sessao", ""),
             "cwd": c.get("cwd", ""), "origem": c.get("origem", ""), "antigas": c.get("antigas") or [],
             "sids_conv": c.get("sids_conv") or [],
+            "duo": (c.get("convidado") or {}).get("agente", "") if c.get("duo") else "",
             "rodando": c["id"] in EXECS and not EXECS[c["id"]].acabou}
 
 
@@ -1110,15 +1111,18 @@ def ctl_responde(p, d):
 
 
 class Execucao:
-    def __init__(self, chat, texto, anexos, convidado=None, oculta=False, debate=False):
+    def __init__(self, chat, texto, anexos, convidado=None, oculta=False, debate=False, duo=False):
         self.chat_id = chat["id"]
         # a guest run (Call another AI) sees the chat through its own agent, account, model and session
         self.conv = convidado
         self.oculta = oculta      # a debate turn of the chat's own AI: no message of yours before it
         self.debate = debate
+        # a reply of the chat's own AI to a message of yours: in a duo chat the other AI answers right after
+        self.seguir_duo = not convidado and not oculta
         if convidado:
             chat = {**chat, "agente": convidado["agente"], "conta": convidado["conta"],
-                    "modelo": convidado.get("modelo", ""), "perm": convidado.get("perm", ""), "effort": "",
+                    "modelo": convidado.get("modelo", ""), "perm": convidado.get("perm", ""),
+                    "effort": convidado.get("effort", "") if convidado["agente"] == "claude" else "",
                     "sessao": convidado.get("sessao", ""), "permitidos": list(convidado.get("permitidos") or [])}
             chat.pop("fork", None)
         self.chat = chat
@@ -1137,6 +1141,8 @@ class Execucao:
                                      "nome": convidado.get("nome", "")}
         if debate:
             self.msg["debate"] = True
+        if duo:
+            self.msg["duo"] = True
         self.inicio = time.time()
         ATIVIDADE["t"] = time.time()
         self.pk = secrets.token_hex(16)
@@ -1530,6 +1536,7 @@ class Execucao:
                     PEDIDOS.pop(k, None)
         self.msg["duracao"] = round(time.time() - self.inicio, 1)
         self.msg["texto"] = self.msg["texto"].strip()
+        self.msg["effort"] = esforco_resposta(self.chat, self.msg.get("modelo") or self.chat.get("modelo", ""))
         if self.parado:
             self.msg["erro"] = (self.msg["erro"] + " " if self.msg["erro"] else "") + "(stopped)"
         with trava:
@@ -1573,8 +1580,8 @@ class Execucao:
         if not self.parado and not self.msg["erro"]:
             try:
                 # a message you queued goes first; the debate picks up after its reply
-                if not proxima_fila(self.chat_id, self):
-                    self.segue = seguir_debate(self.chat_id, self)
+                self.segue = (self.seguir_duo and seguir_duo(self.chat_id, self)) or proxima_fila(self.chat_id, self) \
+                    or seguir_debate(self.chat_id, self)
             except Exception as e:
                 print(f"chat {self.chat_id}: next turn failed: {e!r}", flush=True)
         elif (existe and not self.parado and not self.conv and self.chat["agente"] == "claude" and CFG["padrao"].get("troca_auto")
@@ -1986,7 +1993,7 @@ def _esforco_de(conta, modelo):
     ms = d.get("modelSettings") if isinstance(d.get("modelSettings"), dict) else {}
     m = ms.get(modelo) or ms.get(re.sub(r"\[.*\]$", "", modelo or ""))
     e = (m.get("effortLevel") if isinstance(m, dict) else None) or d.get("effortLevel")
-    return e if isinstance(e, str) and e in ("low", "medium", "high", "xhigh", "max") else ""
+    return e if isinstance(e, str) and e in ESFORCOS else ""
 
 
 def mover_conta(cid, destino, atual=None):
@@ -2160,6 +2167,7 @@ NOME_AG = {"claude": "Claude", "agy": "Antigravity"}
 CONV_MAX = 60_000     # characters of conversation passed along in one go (the newest part wins)
 CONV_MSG = 8_000      # characters of one message
 DEBATE_MAX = 10       # rounds (one reply from each AI)
+ESFORCOS = ("low", "medium", "high", "xhigh", "max")
 
 
 def mesmo_convidado(a, b):
@@ -2194,6 +2202,8 @@ def transcricao(msgs, anfitriao):
             autor = f"User (to {m['para']})" if m.get("para") else "User"
         else:
             autor = (m.get("convidado") or {}).get("nome") or anfitriao
+            if not t and m.get("erro"):
+                continue   # a reply that failed says nothing to the other AI
             if not t:
                 t = "(no text in this reply)"
         if len(t) > CONV_MSG:
@@ -2218,16 +2228,28 @@ def nota_anfitriao(c, oculta):
     msgs = c["mensagens"] if oculta else c["mensagens"][:-1]
     i = _ultimo(msgs, lambda m: m.get("papel") == "assistente" and not m.get("convidado") and not m.get("erro"))
     novas = [m for m in msgs[i + 1:] if m.get("convidado") or m.get("para")]
+    cv = c.get("convidado") if (c.get("convidado") or {}).get("agente") in NOME_AG else None
+    eu, g = nomes_ias(c, cv) if cv else (NOME_AG[c["agente"]], "")
+    equipe = ""
+    if c.get("duo") and cv and not oculta:
+        equipe = (f"[Agents Web: {g} is in this chat with you as a team. It answers each message of the user right "
+                  f"after you, with your reply in front of it, so cover the main answer and leave room for it.]")
     if not novas:
-        return ""
+        return equipe
     nomes = list(dict.fromkeys(m["convidado"].get("nome") or "another AI" for m in novas if m.get("convidado")))
     quem = " and ".join(nomes) or "another AI"
-    eu = nomes_ias(c, c["convidado"])[0] if c.get("convidado") and c["convidado"].get("agente") in NOME_AG else NOME_AG[c["agente"]]
-    return (f"[Agents Web: the user called {quem} into this chat as a second AI. What was said there since "
+    return ((equipe + "\n\n" if equipe else "") +
+            f"[Agents Web: the user called {quem} into this chat as a second AI. What was said there since "
             f"your last reply:]\n\n<conversation>\n{transcricao(novas, eu)}\n</conversation>")
 
 
-def texto_convidado(c, conv, pedido, db):
+EQUIPE = ("[You and {h} are a team in this chat. Each message of the user goes to both of you: {h} answers first "
+          "and you answer right after, with its reply in front of you. Work together: build on {h}'s reply, fix what "
+          "is wrong, add what is missing or do the part it left, and do not repeat what it already said. If it "
+          "already covered everything, say so in a line or two. Reply in the user's language.]")
+
+
+def texto_convidado(c, conv, pedido, db, duo=False):
     h, g = nomes_ias(c, conv)
     msgs = c["mensagens"][:-1] if pedido else c["mensagens"]
     novo = not conv.get("sessao")
@@ -2244,15 +2266,25 @@ def texto_convidado(c, conv, pedido, db):
         t += (f"\n\n[A back and forth between you and {h} with the user watching, reply "
               f"{int(db.get('feitas') or 0) + 1} of {db.get('total')}. Talk to {h} directly, answer its points, "
               "say where you disagree instead of agreeing to be polite, and keep it short.]")
+    equipe = duo and not db
+    if equipe:
+        t += "\n\n" + EQUIPE.format(h=h)
     if pedido:
         t += f"\n\nThe user asks you:\n{pedido}"
-    elif not db or novo:
+    elif not equipe and (not db or novo):
         t += (f"\n\nGive your own view on this conversation, mainly on {h}'s last reply: what you agree with, "
               "what you would do differently and what is missing. Reply in the user's language.")
     return t.strip()
 
 
-def rodar_convidado(cid, pedido="", substitui=None, debate=False):
+def checa_convidado(conv):
+    if not conv or not conta_por_id(conv.get("conta", "")):
+        raise ValueError("the account of the other AI was removed. Call it again")
+    if conv["agente"] == "claude" and conv.get("sessao") and conv["sessao"] in ativas_claude(conta_por_id(conv["conta"])):
+        raise ValueError("the other AI's conversation is open in a terminal right now. Close it there first")
+
+
+def rodar_convidado(cid, pedido="", substitui=None, debate=False, duo=False):
     with trava:
         ex = EXECS.get(cid)
         if ex and not ex.acabou and ex is not substitui:
@@ -2263,8 +2295,7 @@ def rodar_convidado(cid, pedido="", substitui=None, debate=False):
             raise ValueError("the account of the other AI was removed. Call it again")
         if conv.get("sessao") and _ultimo(c["mensagens"], lambda m: mesmo_convidado(m.get("convidado"), conv)) < 0:
             conv["sessao"] = ""   # its replies were edited away: it starts again with the whole chat
-        if conv["agente"] == "claude" and conv.get("sessao") and conv["sessao"] in ativas_claude(conta_por_id(conv["conta"])):
-            raise ValueError("the other AI's conversation is open in a terminal right now. Close it there first")
+        checa_convidado(conv)
         h, g = nomes_ias(c, conv)
         conv["nome"] = g
         if pedido:
@@ -2275,8 +2306,8 @@ def rodar_convidado(cid, pedido="", substitui=None, debate=False):
                 if CFG["padrao"].get("titulos", True):
                     c["nomear_depois"] = True
         gravar_chat(c)
-        texto = texto_convidado(c, conv, pedido, c.get("debate") if debate else None)
-        ex = Execucao(c, texto, [], convidado={**conv, "nome": g}, debate=debate)
+        texto = texto_convidado(c, conv, pedido, c.get("debate") if debate else None, duo)
+        ex = Execucao(c, texto, [], convidado={**conv, "nome": g}, debate=debate, duo=duo and not debate)
         EXECS[cid] = ex
     threading.Thread(target=ex.rodar, daemon=True).start()
     return ex
@@ -2300,6 +2331,8 @@ def convidar(cid, d):
     agente = d.get("agente")
     if agente not in NOME_AG:
         raise ValueError("pick the AI to call")
+    if d.get("conta") and not conta_por_id(str(d["conta"])):
+        raise ValueError("that account was removed. Pick another one")
     conta = conta_por_id(str(d.get("conta") or "")) or next((x for x in CFG["contas"] if x["agente"] == agente), None)
     if not conta or conta["agente"] != agente:
         raise ValueError("this account does not belong to the selected AI")
@@ -2308,17 +2341,25 @@ def convidar(cid, d):
         rodadas = max(0, min(DEBATE_MAX, int(d.get("rodadas") or 0)))
     except (TypeError, ValueError):
         rodadas = 0
+    modo = d.get("modo") if d.get("modo") in ("junto", "uma", "debate") else ("debate" if rodadas else "uma")
+    if modo != "debate":
+        rodadas = 0
+    elif not rodadas:
+        rodadas = 3
     with trava:
         ex = EXECS.get(cid)
         if ex and not ex.acabou:
             raise ValueError("wait for the current reply to finish")
         c = ler_chat(cid)
-        if not c["mensagens"] and not pedido:
+        if not c["mensagens"] and not pedido and modo != "junto":
             raise ValueError("the chat is empty. Tell the other AI what to do")
         conv = c.get("convidado") or {}
         if not mesmo_convidado(conv, {"agente": agente, "conta": conta["id"]}):
             conv = {"agente": agente, "conta": conta["id"], "sessao": ""}
+            if modo != "junto":
+                c["duo"] = False   # the duo partner was replaced by a one-off guest
         conv["modelo"] = str(d.get("modelo") or "")[:200]
+        conv["effort"] = d.get("effort") if agente == "claude" and d.get("effort") in ESFORCOS else ""
         perm = perm_convidado(c, agente)
         if conv.get("perm") != perm:
             conv["permitidos"] = []
@@ -2328,9 +2369,79 @@ def convidar(cid, d):
             c["debate"] = {"total": rodadas * 2, "feitas": 0}
         else:
             c.pop("debate", None)
+        if modo == "junto":
+            c["duo"] = True
         c["ajustado"] = True
+        if modo == "junto" and not pedido:
+            checa_convidado(conv)
+            conv["nome"] = nomes_ias(c, conv)[1]
+            gravar_chat(c)
+            return None   # joined: it answers from your next message on
         gravar_chat(c)
-        return rodar_convidado(cid, pedido, debate=bool(rodadas))   # trava is reentrant: nothing starts in between
+        # trava is reentrant: nothing starts in between
+        return rodar_convidado(cid, pedido, debate=bool(rodadas), duo=modo == "junto")
+
+
+def esforco_resposta(chat, modelo):
+    """The effort a reply ran with: the one picked in the chat, else the account's own default for that model
+    (Claude); Antigravity model ids end with it."""
+    if chat.get("agente") == "agy":
+        for x in (modelo, chat.get("modelo")):
+            m = re.search(r"-(" + "|".join(ESFORCOS) + r")$", x or "")
+            if m:
+                return m.group(1)
+        return ""
+    if chat.get("effort") in ESFORCOS:
+        return chat["effort"]
+    conta = conta_por_id(chat.get("conta", ""))
+    return _esforco_de(conta, modelo) if conta else ""
+
+
+def seguir_duo(cid, atual):
+    """In a duo chat, the other AI answers your message right after the chat's own AI."""
+    with trava:
+        try:
+            c = ler_chat(cid)
+        except (FileNotFoundError, ValueError):
+            return False
+        if not c.get("duo") or not c.get("convidado") or c.get("debate"):
+            return False
+    try:
+        rodar_convidado(cid, "", atual, duo=True)
+        return True
+    except Exception as e:
+        # it cannot answer: say so in the chat and leave the duo, so your queue goes on
+        with trava:
+            c = ler_chat(cid)
+            cv = c.get("convidado") or {}
+            c["mensagens"].append({"papel": "assistente", "texto": "", "ferramentas": [], "uso": {}, "ts": time.time(),
+                                   "convidado": {"agente": cv.get("agente", ""), "conta": cv.get("conta", ""),
+                                                 "nome": cv.get("nome", "")},
+                                   "erro": f"could not answer: {e}. It left the chat, Call another AI brings it back"})
+            c["duo"] = False
+            gravar_chat(c)
+        return False
+
+
+def config_convidado(cid, d):
+    """Change the other AI's model or effort, or take it out of the chat (its session is kept for later)."""
+    with trava:
+        c = ler_chat(cid)
+        conv = c.get("convidado")
+        if not conv:
+            raise ValueError("there is no other AI in this chat")
+        ex = EXECS.get(cid)
+        if ("modelo" in d or "effort" in d) and ex and not ex.acabou and ex.conv:
+            raise ValueError("wait for its reply to finish")
+        if d.get("sair"):
+            c["duo"] = False   # False, not removed: the page merges the answer into the chat it has
+        if "modelo" in d:
+            conv["modelo"] = str(d.get("modelo") or "")[:200]
+            conv["nome"] = nomes_ias(c, conv)[1]
+        if "effort" in d:
+            conv["effort"] = d["effort"] if conv["agente"] == "claude" and d["effort"] in ESFORCOS else ""
+        gravar_chat(c)
+        return c
 
 
 def seguir_debate(cid, atual):
@@ -4095,8 +4206,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 enviar(cid, d.get("texto", ""), d.get("anexos"))
                 return self.resp(200, {"ok": True})
             if acao == "convidar":
-                convidar(cid, self.corpo_json())
-                return self.resp(200, {"ok": True})
+                ex = convidar(cid, self.corpo_json())
+                return self.resp(200, {"ok": True, "rodando": bool(ex)})
+            if acao == "convidado":
+                return self.resp(200, config_convidado(cid, self.corpo_json()))
             if acao == "debate":
                 # end the debate after the reply that is running now
                 with trava:
