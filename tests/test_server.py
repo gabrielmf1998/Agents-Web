@@ -147,6 +147,28 @@ FAKE_CLAUDE = textwrap.dedent(f"""\
 """)
 
 
+# A tiny stand-in for the Antigravity CLI (`agy --output-format stream-json -p <prompt>`): it logs its argv
+# and answers with the last line of the prompt, always in the same conversation.
+FAKE_AGY = textwrap.dedent(f"""\
+    #!{sys.executable}
+    import json, os, sys
+    args = sys.argv[1:]
+    with open(os.environ["HOME"] + "/agy-args.jsonl", "a") as f:
+        f.write(json.dumps(args) + "\\n")
+    prompt = args[args.index("-p") + 1] if "-p" in args else ""
+    linhas = [l for l in prompt.strip().splitlines() if l.strip()]
+    reply = "agy: " + (linhas[-1] if linhas else "")
+    def out(d):
+        print(json.dumps(d))
+        sys.stdout.flush()
+    out({{"event": "init", "conversation_id": "agy-conv-1", "init": {{"model": "gemini-fake"}}}})
+    out({{"event": "step_update", "step_update": {{"step_type": "agent_response", "text_delta": reply,
+         "state": "DONE", "usage": {{"input_tokens": 5, "output_tokens": 2}}}}}})
+    out({{"event": "result", "result": {{"status": "SUCCESS", "response": reply, "conversation_id": "agy-conv-1",
+         "usage": {{"input_tokens": 5, "output_tokens": 2}}, "num_turns": 1}}}})
+""")
+
+
 def porta_livre():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -166,6 +188,9 @@ class Servidor:
         fake = binarios / "claude"
         fake.write_text(FAKE_CLAUDE)
         fake.chmod(0o755)
+        agy = binarios / "agy"
+        agy.write_text(FAKE_AGY)
+        agy.chmod(0o755)
         run = self.tmp / "run"
         run.mkdir(mode=0o700)
         self.porta = porta_livre()
@@ -261,6 +286,10 @@ class Servidor:
 
     def stdin_claude(self):
         p = self.home / "claude-stdin.jsonl"
+        return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
+
+    def args_agy(self):
+        p = self.home / "agy-args.jsonl"
         return [json.loads(l) for l in p.read_text().splitlines()] if p.exists() else []
 
     def args_claude(self):
@@ -980,6 +1009,170 @@ class TestServidor(unittest.TestCase):
         self.assertIn(b"<h1>hi</h1>", corpo)
         self.assertTrue(cab["Content-Security-Policy"].startswith("sandbox"))
         self.assertNotIn("allow-same-origin", cab["Content-Security-Policy"])
+
+
+    # ---------------------------------------------------------------- Call another AI
+    def espera_n(self, cid, n, limite=30):
+        fim = time.time() + limite
+        while time.time() < fim:
+            c = self.s.api(f"/api/chats/{cid}")
+            if len(c["mensagens"]) >= n and not c["rodando"]:
+                return c
+            time.sleep(0.1)
+        raise AssertionError(f"expected {n} messages: {[m.get('texto') for m in c['mensagens']]}")
+
+    def ultimo_prompt_claude(self):
+        return [d for d in self.s.stdin_claude() if d.get("type") == "user"][-1]["message"]["content"]
+
+    def test_chamar_outra_ia_uma_vez(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "what is a monad"})
+        self.s.espera_parado(c["id"])
+        antes = len(self.s.args_agy())
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "texto": "is that right?"})
+        chat = self.espera_n(c["id"], 4)
+        pedido, resp = chat["mensagens"][2], chat["mensagens"][3]
+        self.assertEqual(pedido["para"], "Antigravity")
+        self.assertEqual(resp["convidado"], {"agente": "agy", "conta": "google", "nome": "Antigravity"})
+        self.assertEqual(resp["texto"], "agy: is that right?")
+        # its own session, kept apart from the chat's Claude session
+        self.assertEqual(chat["sessao"], SID)
+        self.assertEqual(chat["convidado"]["sessao"], "agy-conv-1")
+        self.assertIn("agy-conv-1", chat.get("sids_conv"))
+        args = self.s.args_agy()[antes]
+        self.assertNotIn("--conversation", args)
+        prompt = args[args.index("-p") + 1]
+        self.assertIn("### User\nwhat is a monad", prompt)
+        self.assertIn("### Claude\necho: what is a monad", prompt)
+        self.assertNotIn("### User (to", prompt)   # the request itself comes after the conversation
+        self.assertTrue(prompt.rstrip().endswith("The user asks you:\nis that right?"))
+        # Claude gets the other AI's reply with your next message, on its own session
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "thanks both"})
+        self.espera_n(c["id"], 6)
+        dado = self.ultimo_prompt_claude()
+        self.assertIn("called Antigravity into this chat", dado)
+        self.assertIn("### User (to Antigravity)\nis that right?", dado)
+        self.assertIn("### Antigravity\nagy: is that right?", dado)
+        self.assertTrue(dado.endswith("The user's new message:\nthanks both"))
+        ultimo = self.s.args_claude()[-1]
+        self.assertEqual(ultimo[ultimo.index("--resume") + 1], SID)
+        # the next Claude message carries nothing extra
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "plain"})
+        self.espera_n(c["id"], 8)
+        self.assertEqual(self.ultimo_prompt_claude(), "plain")
+        # called again: resumes its conversation and only gets what it has not seen
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google"})
+        chat = self.espera_n(c["id"], 9)
+        args = self.s.args_agy()[-1]
+        self.assertEqual(args[args.index("--conversation") + 1], "agy-conv-1")
+        prompt = args[args.index("-p") + 1]
+        self.assertNotIn("what is a monad", prompt)
+        self.assertIn("### User\nthanks both", prompt)
+        self.assertIn("Give your own view", prompt)
+        self.assertNotIn("para", chat["mensagens"][-1])   # no request of yours this time
+        # not listed again as a terminal conversation
+        self.assertFalse(any(x.get("sid") == "agy-conv-1" for x in self.s.api("/api/cli/lista")))
+
+    def test_debate_vai_e_volta_e_para_sozinho(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "tabs or spaces"})
+        self.s.espera_parado(c["id"])
+        n_claude = len(self.s.args_claude())
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "rodadas": 2})
+        self.espera_n(c["id"], 6, 40)
+        time.sleep(0.5)
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        quem = [("agy" if m.get("convidado") else "claude") if m["papel"] == "assistente" else "voce"
+                for m in chat["mensagens"]]
+        self.assertEqual(quem, ["voce", "claude", "agy", "claude", "agy", "claude"])
+        self.assertTrue(all(m.get("debate") for m in chat["mensagens"][2:]))
+        self.assertNotIn("debate", chat)   # 4 replies done, it ended by itself
+        self.assertFalse(chat["rodando"])
+        self.assertEqual(len(self.s.args_claude()) - n_claude, 2)
+        # Claude's debate turns: no message of yours, the other AI's reply goes in
+        dado = self.ultimo_prompt_claude()
+        self.assertIn("### Antigravity\nagy:", dado)
+        self.assertIn("Talk to Antigravity directly", dado)
+        p1 = self.s.args_agy()[-2]
+        self.assertIn("reply 1 of 4", p1[p1.index("-p") + 1])
+        p2 = self.s.args_agy()[-1]
+        self.assertIn("reply 3 of 4", p2[p2.index("-p") + 1])
+        self.assertEqual(p2[p2.index("--conversation") + 1], "agy-conv-1")
+
+    def test_debate_parar_encerra(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "first"})
+        self.s.espera_parado(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": "claude1",
+                                                       "texto": "hang here", "rodadas": 3})
+        time.sleep(0.6)
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        self.assertTrue(chat["rodando"])
+        self.assertEqual(chat["vivo"]["nome"], "Claude (guest)")
+        self.assertEqual(chat["debate"], {"total": 6, "feitas": 0})
+        self.s.api(f"/api/chats/{c['id']}/parar", {})
+        self.s.espera_parado(c["id"])
+        time.sleep(0.5)
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        self.assertNotIn("debate", chat)
+        self.assertIn("(stopped)", chat["mensagens"][-1]["erro"])
+        self.assertEqual(len(chat["mensagens"]), 4)
+        self.assertEqual(chat["sessao"], SID)
+
+    def test_encerrar_debate_depois_da_resposta(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "first"})
+        self.s.espera_parado(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": "claude1",
+                                                       "texto": "slow please", "rodadas": 5})
+        self.s.api(f"/api/chats/{c['id']}/debate", {})
+        self.s.espera_parado(c["id"])
+        time.sleep(0.5)
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        self.assertEqual(len(chat["mensagens"]), 4)
+        self.assertTrue(chat["mensagens"][-1]["texto"].startswith("echo: "))
+        self.assertNotIn("debate", chat)
+
+    def test_editar_depois_do_convidado(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "one"})
+        self.s.espera_parado(c["id"])
+        uuid1 = self.s.api(f"/api/chats/{c['id']}")["mensagens"][1]["uuid"]
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "texto": "hi agy"})
+        self.espera_n(c["id"], 4)
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "two"})
+        self.espera_n(c["id"], 6)
+        # your request to the other AI cannot be edited, it is called again instead
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 2, "texto": "x"}, esperado=400)
+        # editing "two" branches Claude at its own last reply, skipping the other AI's part
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 4, "texto": "two again"})
+        self.espera_n(c["id"], 6)
+        ultimo = self.s.args_claude()[-1]
+        self.assertEqual(ultimo[ultimo.index("--resume-session-at") + 1], uuid1)
+        dado = self.ultimo_prompt_claude()
+        self.assertIn("### Antigravity\nagy: hi agy", dado)
+        self.assertTrue(dado.endswith("two again"))
+
+    def test_chamar_validacoes(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy"}, esperado=400)       # empty chat
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "x", "texto": "a"}, esperado=400)
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "claude1", "texto": "a"}, esperado=400)
+
+    def test_convidado_nao_tem_mais_permissao_que_o_chat(self):
+        c = self.novo_chat(perm="plan")
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "texto": "look around"})
+        chat = self.espera_n(c["id"], 2)
+        args = self.s.args_agy()[-1]
+        self.assertEqual(args[args.index("--mode") + 1], "plan")
+        self.assertNotIn("--dangerously-skip-permissions", args)
+        # a chat started by calling the other AI gets a title too
+        self.assertNotIn(chat["titulo"], ("New chat", "Novo chat"))
+        c2 = self.novo_chat()
+        self.s.api(f"/api/chats/{c2['id']}/convidar", {"agente": "agy", "conta": "google", "texto": "hello"})
+        self.espera_n(c2["id"], 2)
+        args = self.s.args_agy()[-1]
+        self.assertIn("--dangerously-skip-permissions", args)
 
 
 if __name__ == "__main__":

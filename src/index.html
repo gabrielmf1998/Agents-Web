@@ -241,6 +241,26 @@ body[data-tema=agy] .vazio h2{background:var(--ac);-webkit-background-clip:text;
 .sug svg{color:var(--acs)}
 .sug:hover{border-color:var(--acs);transform:translateY(-2px);transition:transform .2s,border-color .2s}
 .m{margin:0 0 22px}
+.m.a.conv{position:relative}
+.m.a.conv::before{content:"";position:absolute;left:10px;top:30px;bottom:2px;width:2px;border-radius:2px;background:var(--gc);opacity:.6}
+.m.a.conv:has(.think)::before{display:none}
+.m.a.conv.claude{--gc:#d97757}.m.a.conv.agy{--gc:linear-gradient(180deg,#4285f4,#8b6cff 55%,#c46bff)}
+.m.u.para .corpo{border-style:dashed}
+.cab-m .seta{color:var(--mu2)}
+#chamaBtn{flex:none}
+@media (max-width:760px){#chamaBtn span{display:none}#chamaBtn{width:32px;padding:0}}
+.conv-ops{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin:4px 0 14px}
+.conv-op{display:flex;gap:10px;align-items:center;padding:10px 11px;border:1px solid var(--bd2);border-radius:10px;background:var(--p2);color:var(--tx);cursor:pointer;text-align:left}
+.conv-op:hover{border-color:var(--acs)}
+.conv-op.on{border-color:var(--acs);box-shadow:inset 0 0 0 1px var(--acs);background:var(--tint)}
+.conv-op b{display:block;font-weight:600}.conv-op small{display:block;color:var(--mu);font-size:11.5px}
+.conv-l{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+.conv-l>.lbl{width:100%;margin-bottom:-2px}
+.conv-txt{width:100%;min-height:84px;resize:vertical;background:var(--p1);border:1px solid var(--bd2);border-radius:9px;padding:9px 11px;margin:0 0 12px;color:var(--tx);font:inherit}
+.conv-txt:focus{outline:none;border-color:var(--acs)}
+.conv-f{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:6px}.conv-f small{flex:1;color:var(--mu);font-size:11.5px}
+.debate-b{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;width:fit-content;max-width:100%;margin:0 auto 16px;padding:6px 8px 6px 12px;border:1px solid var(--bd);border-radius:16px;background:var(--p1);color:var(--mu);font-size:12.5px}
+.debate-b b{color:var(--tx);font-weight:600}.debate-b svg{color:var(--acs)}
 .m.novo{animation:surge .4s cubic-bezier(.2,.8,.3,1)}
 @keyframes surge{from{opacity:0;transform:translateY(10px)}}
 .cab-m{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12.5px;color:var(--mu)}
@@ -667,6 +687,7 @@ kbd{display:inline-block;font:600 11px/1 var(--mono);padding:4px 6px;min-width:2
    <div class="av g" id="cabAv"></div>
    <input id="titulo" type="text" value="" placeholder="Untitled chat" spellcheck="false">
    <div class="seg" id="agSeg"><button data-a="claude"></button><button data-a="agy"></button></div>
+   <button class="btn sm" id="chamaBtn" title="Call another AI into this chat: it reads the conversation and replies here, once or in a debate"></button>
    <button class="btn ghost ic" id="dupBtn" title="New chat with the same settings"></button>
    <button class="btn ghost ic perigo" id="apaBtn" title="Delete chat"></button>
   </div>
@@ -726,7 +747,7 @@ const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const plural=(n,s)=>`${n} ${s}${n===1?"":"s"}`;
 
 /* ---------- icons ---------- */
-const P={branch:"M6 3v12M18 9a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",download:"M12 3v12M7 10l5 5l5-5M5 21h14",help:"M12 22a10 10 0 1 0 0-20a10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01",lista:"M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",pin:"M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",plus:"M12 5v14M5 12h14",search:"M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-3.6-3.6",users:"M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7",
+const P={branch:"M6 3v12M18 9a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",download:"M12 3v12M7 10l5 5l5-5M5 21h14",help:"M12 22a10 10 0 1 0 0-20a10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01",lista:"M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",pin:"M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",plus:"M12 5v14M5 12h14",search:"M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-3.6-3.6",chama:"M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",users:"M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7",
  import:"M12 4v11M7.5 10.5L12 15l4.5-4.5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2",phone:"M8 3h8a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 16 21H8a1.5 1.5 0 0 1-1.5-1.5v-15A1.5 1.5 0 0 1 8 3zM11 18h2",
  sparkles:"M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",folder:"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",mais:"M5 12h.01M12 12h.01M19 12h.01",
  copy:"M9 9h10v10H9zM5 15V5h10",trash:"M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",stop:"M7 7h10v10H7z",send:"M12 19V5M5.5 11.5L12 5l6.5 6.5",
@@ -822,6 +843,7 @@ $("#animBtn").innerHTML=ic("gear",17)+"Settings";
 $("#micBtn").innerHTML=ic("mic",18);
 $("#menuBtn").innerHTML=ic("menu",18);
 $("#dupBtn").innerHTML=ic("copy");
+$("#chamaBtn").innerHTML=ic("chama",15)+"<span>Call another AI</span>";
 $("#apaBtn").innerHTML=ic("trash");
 $("#anexBtn").innerHTML=ic("clip",18);
 $("#envBtn").innerHTML=ic("send",18);
@@ -1113,8 +1135,8 @@ function mdChat(c){
  const ag=c.agente==="claude"?"Claude":"Antigravity",cn=contaNome(c.conta),L=[`# ${c.titulo}`,"",[ag,cn!==ag?cn:null,c.modelo?nomeModelo(c.modelo):null,c.cwd].filter(Boolean).join(" · "),`Exported from Agents on ${new Date().toLocaleString()}`,""];
  for(const m of c.mensagens){
   const q=m.ts?" · "+new Date(m.ts*1000).toLocaleString():"";
-  if(m.papel==="usuario"){L.push(`## You${q}`,"",m.texto||"");for(const a of m.anexos||[])L.push(`- Attached ${a.nome} (${a.caminho})`);L.push("");continue}
-  L.push(`## ${ag}${q}`,"");
+  if(m.papel==="usuario"){L.push(`## You${m.para?" to "+m.para:""}${q}`,"",m.texto||"");for(const a of m.anexos||[])L.push(`- Attached ${a.nome} (${a.caminho})`);L.push("");continue}
+  L.push(`## ${m.convidado?(m.convidado.nome||CURTO[m.convidado.agente]):ag}${q}`,"");
   for(const f of m.ferramentas||[]){let r=f.entrada;try{r=resumoEntrada(JSON.parse(f.entrada))||f.entrada}catch{}L.push(`> **${f.nome}** \`${String(r).replace(/\s+/g," ").replace(/`/g,"'").slice(0,200)}\`${f.erro?" (failed)":""}`)}
   if((m.ferramentas||[]).length)L.push("");
   if(m.texto)L.push(m.texto,"");if(m.erro)L.push(`> Error ${m.erro}`,"");
@@ -1401,8 +1423,14 @@ function desenharMsgs(){
  desenharFila();desenharBarra();rolar(true);
 }
 function desenharFila(){
- const F=$("#fila");F.textContent="";if(!CHAT||!CHAT.fila||!CHAT.fila.length)return;
+ const F=$("#fila");F.textContent="";if(!CHAT)return;
  const corre=!!(CHAT.rodando||VIVO);
+ if(CHAT.debate&&CHAT.convidado&&corre){const d=CHAT.debate,w=el("div",{class:"debate-b"});w.innerHTML=ic("chama",14);
+  w.append(el("span",{html:`Debate with <b>${esc(CHAT.convidado.nome||CURTO[CHAT.convidado.agente])}</b> · reply ${Math.min(d.total,(d.feitas||0)+1)} of ${d.total}`}));
+  const x=el("button",{class:"btn sm",title:"The reply being written now finishes, then the debate stops"},"End after this reply");
+  x.onclick=async()=>{try{await api(`/api/chats/${CHAT.id}/debate`,{});CHAT.debate=null;desenharFila();toast("The debate stops after this reply")}catch(e){toast(cap(e.message))}};
+  w.append(x);F.append(w)}
+ if(!CHAT.fila||!CHAT.fila.length)return;
  CHAT.fila.forEach((q,i)=>{
   const ac=el("div",{class:"q-acoes"});
   if(!corre){const s=el("button",{class:"btn sm",onclick:()=>acaoFila(i,"enviar")});s.innerHTML=ic("send",13)+"Send now";ac.append(s)}
@@ -1414,10 +1442,11 @@ async function acaoFila(i,acao){
  try{const r=await api(`/api/chats/${CHAT.id}/fila`,{i,acao});
   if(acao==="enviar"){await abrir(CHAT.id,true)}else{CHAT.fila=r.fila;desenharFila()}carregarEstado()}catch(e){toast(cap(e.message))}
 }
-function podeVoltar(i){if(!CHAT||CHAT.agente!=="claude")return false;if(i===0)return true;const a=CHAT.mensagens[i-1];return!!(a&&a.papel==="assistente"&&a.uuid&&CHAT.sessao)}
+/* like the server: the other AI's replies (and your messages to it) are skipped, the branch starts at the last reply of the chat's own AI */
+function podeVoltar(i){if(!CHAT||CHAT.agente!=="claude")return false;const ms=CHAT.mensagens;if(ms[i]&&ms[i].para)return false;let j=i-1;while(j>=0&&(ms[j].convidado||ms[j].para))j--;if(j<0)return true;const a=ms[j];return!!(a&&a.papel==="assistente"&&a.uuid&&CHAT.sessao)}
 function blocoUsuario(m,i){
  const tx=m.texto||"",cp=el("div",{class:"corpo"},tx);
- const b=el("div",{class:"m u"},el("div",{class:"cab-m"},m.auto?el("span",{class:"auto",title:"Sent by Agents after the account switch"},"automatic"):null,el("span",{},m.ts?quando(m.ts):""),el("b",{},"You")),cp);
+ const b=el("div",{class:"m u"+(m.para?" para":"")},el("div",{class:"cab-m"},m.auto?el("span",{class:"auto",title:"Sent by Agents after the account switch"},"automatic"):null,el("span",{},m.ts?quando(m.ts):""),el("b",{},"You"),m.para?el("span",{class:"seta"},"to"):null,m.para?el("b",{},m.para):null),cp);
  if(tx.split("\n").length>14||tx.length>1400){cp.classList.add("longo");const mb=el("button",{class:"btn ghost sm mais-txt"},"Show more");mb.onclick=()=>{mb.textContent=cp.classList.toggle("longo")?"Show more":"Show less"};b.append(mb)}
  if(m.anexos&&m.anexos.length)b.append(listaAnexos(m.anexos));
  const ac=el("div",{class:"acoes-m"});
@@ -1516,7 +1545,7 @@ function metaMsg(m,texto){
  if(texto){const b=el("button",{class:"btn ghost",title:"Copy reply"});b.onclick=()=>copiar(texto,b);b.innerHTML=ic("copy",13);d.append(b)}
  return d;
 }
-function cabAssist(ag,extra){const h=el("div",{class:"cab-m"});h.append(avatar(ag),el("b",{},CURTO[ag]));if(extra)h.append(extra);return h}
+function cabAssist(ag,extra,nome){const h=el("div",{class:"cab-m"});h.append(avatar(ag),el("b",{},nome||CURTO[ag]));if(extra)h.append(extra);return h}
 const PKTIT={root:"Root permission needed",ferramenta:"Approval needed",pergunta:"Claude has a question",plano:"Plan ready for review"};
 const PKESPERA={root:"Waiting for root approval",ferramenta:"Waiting for your approval",pergunta:"Waiting for your answer",plano:"Waiting for you to review the plan"};
 const PKEST={permitido:"Allowed",respondido:"Answered",aprovado:"Approved",pendente:"Waiting for your approval",verificando:"Checking the password…",ok:"Approved",falhou:"Wrong password, nothing ran",negado:"Denied, nothing ran",expirou:"No answer in 10 minutes, nothing ran",cancelado:"Cancelled, nothing ran",erro:"Did not run"};
@@ -1661,8 +1690,11 @@ async function continuarEm(id,b){
  catch(e){toast(cap(e.message));if(b)b.disabled=false}
 }
 function blocoAssist(m,i){
- const b=el("div",{class:"m a"});
- b.append(cabAssist(CHAT.agente,el("span",{},(m.ts?quando(m.ts):"")+(m.importada?" · imported from CLI":""))));
+ const g=m.convidado,b=el("div",{class:"m a"+(g?" conv "+g.agente:"")});
+ const h=cabAssist(g?g.agente:CHAT.agente,el("span",{},(m.ts?quando(m.ts):"")+(m.importada?" · imported from CLI":"")),g&&(g.nome||CURTO[g.agente]));
+ if(g)h.append(el("span",{class:"auto",title:"Called into this chat with Call another AI"},m.debate?"debate":"guest"));
+ else if(m.debate)h.append(el("span",{class:"auto",title:"A debate turn, sent by Agents"},"debate"));
+ b.append(h);
  if(m.pensamento){const p=el("details",{class:"pens"});const s=el("summary",{});s.innerHTML=ic("brain",14)+"Thinking";p.append(s,el("div",{class:"ptxt"},m.pensamento));b.append(p)}
  if(m.ferramentas&&m.ferramentas.length){if(m.ferramentas.length>=3)b.append(grupoFerrs(m.ferramentas,false).d);else{const f=el("div",{class:"ferrs"});for(const x of m.ferramentas)f.append(blocoFerr(x));b.append(f)}}
  if(m.pedidos&&m.pedidos.length){const k=el("div",{class:"pks"});for(const x of m.pedidos)k.append(cartaoPk({...x,estado:x.estado==="pendente"?"cancelado":x.estado}));b.append(k)}
@@ -1670,9 +1702,9 @@ function blocoAssist(m,i){
  if(m.negadas&&m.negadas.length)b.append(el("div",{class:"erro"},"Permission denied for: "+m.negadas.join(", ")+". Change the permission mode in the header."));
  if(m.erro)b.append(el("div",{class:"erro"},cap(m.erro)));
  if(m.troca)b.append(el("div",{class:"troca-n",html:ic("user",14)+`<span>${esc(contaNome(m.troca.de))} reached its limit, so the chat moved to <b>${esc(contaNome(m.troca.para))}</b> and went on by itself.</span>`}));
- if(m.erro&&i!=null&&i===CHAT.mensagens.length-1&&CHAT.agente==="claude"&&LIMRE.test(m.erro))b.append(cartaoLimite());
+ if(!g&&m.erro&&i!=null&&i===CHAT.mensagens.length-1&&CHAT.agente==="claude"&&LIMRE.test(m.erro))b.append(cartaoLimite());
  const meta=m.importada?null:metaMsg(m,m.texto);
- if(i!=null&&CHAT.agente==="claude"&&m.uuid&&CHAT.sessao){const bf=el("button",{class:"btn ghost txt",title:"A new chat that continues from this reply, leaving this one as it is"});bf.innerHTML=ic("branch",13)+"Fork";bf.onclick=()=>bifurcarMsg(i);
+ if(i!=null&&!g&&CHAT.agente==="claude"&&m.uuid&&CHAT.sessao){const bf=el("button",{class:"btn ghost txt",title:"A new chat that continues from this reply, leaving this one as it is"});bf.innerHTML=ic("branch",13)+"Fork";bf.onclick=()=>bifurcarMsg(i);
   if(meta)meta.append(bf);else b.append(el("div",{class:"meta"},bf))}
  if(meta)b.append(meta);
  return b;
@@ -1716,9 +1748,9 @@ function pararSpin(){if(SPIN){clearInterval(SPIN);SPIN=null}}
 
 /* ---------- live ---------- */
 function escutar(desde){
- const id=CHAT.id,ag=CHAT.agente,conta=CHAT.conta;pararSpin();
+ const vv=CHAT.vivo||null,id=CHAT.id,ag=vv?vv.agente:CHAT.agente,conta=vv?vv.conta:CHAT.conta;pararSpin();
  const modelo=el("span",{class:"badge",hidden:""});
- const b=el("div",{class:"m a novo"},cabAssist(ag,modelo));
+ const b=el("div",{class:"m a novo"+(vv?" conv "+vv.agente:"")},cabAssist(ag,modelo,vv&&(vv.nome||CURTO[vv.agente])));
  const pens=el("details",{class:"pens vivo",hidden:""}),psum=el("summary",{}),ptxt=el("div",{class:"ptxt"});
  psum.innerHTML=ic("brain",14)+'<span class="shimmer" style="font-size:12.5px">Thinking</span>';pens.append(psum,ptxt);
  const grp=grupoFerrs([],true,true),pks=el("div",{class:"pks"}),corpo=el("div",{class:"corpo"}),ind=indicador(ag);grp.d.hidden=true;
@@ -1749,7 +1781,7 @@ function escutar(desde){
    case"pedido":{comecou();const novo=cartaoPk(ev),v=pks.querySelector(`[data-pk="${CSS.escape(ev.id)}"]`);if(v)v.replaceWith(novo);else pks.append(novo);
     VIVO.espera=VIVO.espera||{};
     if(ev.estado==="pendente"){VIVO.espera[ev.id]=PKESPERA[ev.tipo]||PKESPERA.root;pkAlerta(ev,id,CHAT&&CHAT.titulo);rolar(true)}else{delete VIVO.espera[ev.id];PKVISTOS.add(ev.id)}break}
-   case"fim":{ES.close();ES=null;VIVO=null;pararSpin();rodando(false);const x=EST.chats.find(y=>y.id===id);if(x)x.rodando=false;const fm=ev.msg||{};if(!fm.troca)avisar(id,CHAT&&CHAT.titulo,fm.texto,!!fm.erro);abrir(id,true);carregarEstado();carregarUso(conta);break}
+   case"fim":{ES.close();ES=null;VIVO=null;pararSpin();rodando(false);const x=EST.chats.find(y=>y.id===id);if(x)x.rodando=false;const fm=ev.msg||{};if(!fm.troca&&!ev.segue)avisar(id,CHAT&&CHAT.titulo,fm.texto,!!fm.erro);abrir(id,true);carregarEstado();carregarUso(conta);break}
   }
  };
  ES.onerror=()=>{if(ES&&ES.readyState===2){ES=null;setTimeout(()=>CHAT&&CHAT.id===id&&abrir(id,true),1500)}};
@@ -1891,6 +1923,46 @@ $("#novoBtn").onclick=()=>{
   B.append(el("div",{class:"cart"},n,bt));
  }
 };
+$("#chamaBtn").onclick=()=>dlgChamar();
+function dlgChamar(){
+ if(!CHAT){toast("Open a chat first");return}
+ if(ocupado()){toast("Wait for the current reply to finish");return}
+ const host=CURTO[CHAT.agente],cv=CHAT.convidado||null;
+ // the other kind of AI first, then other accounts of the same one
+ const cs=[...EST.contas].sort((a,b)=>(a.agente===CHAT.agente)-(b.agente===CHAT.agente));
+ let sel=(cv&&cs.find(c=>c.agente===cv.agente&&c.id===cv.conta))||cs.find(c=>c.agente!==CHAT.agente)||cs.find(c=>c.id!==CHAT.conta)||cs[0];
+ if(!sel){toast("Add an account first");return}
+ abreDlg("Call another AI","","chamar");const B=$("#dlgB");
+ B.append(el("p",{class:"nota",style:"margin:0 0 12px"},`It reads this chat so far and replies here with its own name. ${host} sees that reply with your next message, or answers it by itself in a debate.`));
+ B.append(el("div",{class:"lbl"},"Who"));
+ const L=el("div",{class:"conv-ops"});B.append(L);
+ const modelo=el("select",{class:"campo"}),rod=el("select",{class:"campo"});
+ for(let n=2;n<=10;n++)rod.append(el("option",{value:n},`${n} rounds · ${n*2} replies`));rod.value="3";
+ const pintaModelos=()=>{modelo.textContent="";const ms=(MODELOS[sel.agente]||[]).map(m=>[m.id,m.nome||nomeModelo(m.id)]);ms.unshift(["","Default model"]);for(const[v,n]of ms)modelo.append(el("option",{value:v},n));modelo.value=cv&&cv.agente===sel.agente&&cv.conta===sel.id&&cv.modelo||""};
+ for(const c of cs){const b=el("button",{class:"conv-op"+(c===sel?" on":""),type:"button"});
+  b.append(avatar(c.agente),el("div",{},el("b",{},CURTO[c.agente]),el("small",{},(c.nome===CURTO[c.agente]?(c.agente==="agy"?"Google account":"Claude account"):c.nome)+(c.id===CHAT.conta?" · this chat's account":""))));
+  b.onclick=()=>{sel=c;L.querySelectorAll(".conv-op").forEach(x=>x.classList.toggle("on",x===b));pintaModelos();pinta()};L.append(b)}
+ const lm=el("div",{class:"conv-l"},el("div",{class:"lbl"},"Model"),modelo);B.append(lm);
+ B.append(el("div",{class:"lbl",style:"margin-bottom:6px"},"What should it do"));
+ const ta=el("textarea",{class:"conv-txt",placeholder:`Optional. Empty asks for its own view on ${host}'s last reply`});B.append(ta);
+ let modo=CHAT.debate?"debate":"uma";
+ const seg=el("div",{class:"seg ajuste"});
+ for(const[v,n]of[["uma","One reply"],["debate","Debate"]]){const b=el("button",{class:v===modo?"on":null,type:"button"},n);b.onclick=()=>{modo=v;seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));pinta()};seg.append(b)}
+ const rw=el("span",{},rod);
+ B.append(el("div",{class:"conv-l"},el("div",{class:"lbl"},"How"),seg,rw));
+ const nota=el("small",{}),ok=el("button",{class:"btn pri"});
+ B.append(el("div",{class:"conv-f"},nota,ok));
+ function pinta(){rw.hidden=modo!=="debate";const nm=CURTO[sel.agente]+(sel.agente===CHAT.agente?` (${sel.nome})`:"");
+  ok.innerHTML=ic("chama",15)+esc("Call "+nm);
+  nota.textContent=modo==="debate"?`They take turns by themselves, ${+rod.value*2} replies in all. Stop or End ends it early. Each reply uses its account's quota.`:"Each reply uses that account's quota."}
+ rod.onchange=pinta;pintaModelos();pinta();
+ ta.onkeydown=e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();ok.click()}};
+ ok.onclick=async()=>{if(!CHAT)return;if(!CHAT.mensagens.length&&!ta.value.trim()){toast("The chat is empty. Tell it what to do");ta.focus();return}
+  ok.disabled=true;pedirAviso();
+  try{await api(`/api/chats/${CHAT.id}/convidar`,{agente:sel.agente,conta:sel.id,modelo:modelo.value,texto:ta.value,rodadas:modo==="debate"?+rod.value:0})}catch(e){ok.disabled=false;toast(cap(e.message));return}
+  dlg.close();CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();rodando(true);escutar(0);carregarEstado()};
+ setTimeout(()=>ta.focus(),50);
+}
 $("#dupBtn").onclick=async()=>{if(!CHAT)return;try{const n=await api(`/api/chats/${CHAT.id}/duplicar`,{});await carregarEstado();abrir(n.id);toast("New chat with the same settings")}catch(e){toast(cap(e.message))}};
 $("#apaBtn").onclick=()=>CHAT&&confirmarApagar([CHAT.id]);
 function confirmarApagar(ids){

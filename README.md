@@ -14,6 +14,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 ## Features
 
 - **Both agents, one page.** Switch between Claude Code and Antigravity per chat, each with its own theme.
+- **Call another AI.** A button in the chat header brings a second AI into the conversation: Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. It reads the chat so far and replies right there with its own name and color, for one reply or for a debate where the two take turns by themselves.
 - **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices. When one account reaches its usage limit, the chat continues the same conversation on another one, with one click or by itself. All accounts share one Claude memory.
 - **Real usage limits.** Shows session and weekly limits as reported by the CLIs themselves, plus tokens per model.
 - **Terminal conversations.** Your existing `claude` and `agy` sessions show up in the sidebar. You can open, continue, rename or delete them, and a Claude chat can move to another working folder.
@@ -208,6 +209,24 @@ words) appear the same way, in every mode. You get a notification when the page 
 
 Antigravity has no prompts in print mode, so its modes (Full access, Accept edits, Auto, Plan) act alone. Only
 run agents in folders you trust.
+
+### Call another AI
+
+**Call another AI**, in the chat header, brings a second AI into the chat you are in. Pick who (Antigravity,
+Claude, or another Claude account), the model, and optionally what it should do. Left empty, it gives its own
+view on the last reply.
+
+- **One reply.** It reads the chat so far and answers in the same chat, under its own name and with a colored
+  line beside its reply. The chat's own AI gets that answer, and your message to it, along with your next
+  message.
+- **Debate.** The two take turns by themselves for 2 to 10 rounds (one reply from each per round), answering
+  each other's points. A bar above the message box shows the progress. **End after this reply** lets the reply
+  being written finish and stops there, and Stop ends it at once. A message you send during a debate waits for
+  the current reply, goes to the chat's own AI, and the debate then goes on.
+
+Each AI keeps its own CLI session, so calling the same one again only sends what it has not seen yet. It never
+gets more freedom than the chat: its permission mode follows the chat's one (Plan stays Plan, for example).
+Every reply uses the quota of the account that writes it.
 
 ### Edit, retry and fork
 

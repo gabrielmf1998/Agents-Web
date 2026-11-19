@@ -107,6 +107,32 @@ session id is remembered (`antigas`) so it is not listed again as a terminal ses
 message simply starts a new session. Fork does the same in a new chat file, and the original chat is not
 touched.
 
+### Call another AI
+
+`chats/<id>/convidar` stores the guest in the chat (`convidado`: agent, account, model, permission mode, its own
+CLI session) and starts an `Execucao` that sees the chat through the guest: same file, same event stream, but
+the guest's CLI, account, model and session. Its reply is saved with `convidado: {agente, conta, nome}`, and
+your request to it as a message with `para: <name>`. Its session id goes to `sids_conv` (with the account in
+`contas_conv`), which hides it from the terminal list and deletes it with the chat.
+
+What each side reads is worked out from the messages, with no counters to drift:
+
+- The guest, on its first call (or after an edit cut its replies), gets the whole chat as a transcript
+  (newest 60 000 characters, 8 000 per message). Later calls resume its session and send only the messages
+  after its last reply.
+- The chat's own AI gets, ahead of your next message, the guest replies and your messages to the guest since
+  its own last reply that did not fail (a failed reply may never have reached its session).
+
+A debate is `debate: {total, feitas}` in the chat. When a reply ends without error or stop, `finalizar` first
+sends a queued message, and otherwise starts the next debate turn (the guest after the chat's AI, the chat's
+AI after the guest) before the `fim` event, like the queue. The chat's AI turns are hidden runs with no
+message of yours. Stop, an error, or `chats/<id>/debate` ends it. `fim` carries `segue: true` when another
+turn already started, so the page does not notify every turn.
+
+The guest's permission mode follows the chat's own mode (`PERM_PAR` maps between the two CLIs, modes with no
+match become Plan), and its approvals (`Always allow`) stay with the guest. Editing and forking skip the guest
+part: a branch starts at the last reply of the chat's own AI, and the guest part is passed along again.
+
 ### Terminal sessions
 
 The sidebar also lists sessions made in a terminal. They are read directly from the CLIs' own files.
@@ -217,6 +243,8 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/parar` | POST | stop the running reply |
 | `chats/<id>/config` | POST | rename, change model, effort, permission mode, account or folder |
 | `chats/<id>/fila` | POST | edit, reorder or clear queued messages |
+| `chats/<id>/convidar` | POST | call another AI into the chat (`agente`, `conta`, `modelo`, optional `texto`, `rodadas` 0 for one reply or 2 to 10 for a debate) |
+| `chats/<id>/debate` | POST | end the debate after the reply that is running |
 | `chats/<id>/duplicar` | POST | copy a chat |
 | `chats/<id>/reenviar` | POST | edit or retry message `indice` (`texto`, or `null` to resend it as it was) |
 | `chats/<id>/bifurcar` | POST | a new chat that continues from reply `indice` |

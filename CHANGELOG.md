@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.1.0 (2026-11-19)
+
+New
+
+- **Call another AI.** A new button in the chat header brings a second AI into the conversation you are in:
+  Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. Pick who, the
+  model and, if you want, what it should do (left empty, it gives its own view on the last reply). It reads
+  the chat so far and answers right there, under its own name, with a colored line beside its reply, and your
+  message to it shows "You to Antigravity". The chat's own AI gets that answer with your next message.
+- **Debates.** Choose Debate and 2 to 10 rounds, and the two AIs take turns by themselves, answering each
+  other's points, while you watch. A bar above the message box shows "Debate with Antigravity, reply 3 of 6"
+  and has **End after this reply**. Stop ends it at once, and a message you send in the middle waits for the
+  current reply, goes to the chat's own AI, and then the debate goes on. You get one notification at the end,
+  not one per turn.
+- Each AI keeps its own session, so calling the same one again only sends what it has not seen yet. It never
+  gets more freedom than the chat: a chat in Plan mode calls the other AI in Plan mode too. Edit, Retry and
+  Fork keep working in chats with another AI, and deleting a chat with its sessions also deletes the other
+  AI's sessions.
+
 ## 2.0.0 (2026-11-16)
 
 New
