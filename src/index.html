@@ -134,6 +134,60 @@ body.troca main{animation:entra .55s ease-out}
 body.sem-anim *,body.sem-anim *::after,body.sem-anim *::before{animation:none!important;transition:none!important}
 @media (prefers-reduced-motion:reduce){*,*::after,*::before{animation:none!important}}
 
+
+/* ---------------- VOID: pitch black everywhere, Clawd and the Antigravity mark adrift over a dark horizon ---------------- */
+body.void,body.void[data-tema]{color-scheme:dark;--bg:#000;--p1:#000;--p2:#0a0a0a;--p3:#141414;--bd:#181818;--bd2:#272727;--tx:#ededed;--mu:#8f8f8f;--mu2:#5b5b5b;--code:#060606;--code2:#060606;--sh:rgba(0,0,0,.85);--raio:13px;
+ --v1:#d97757;--v2:#9b72ff;--v3:#4285f4;--vg1:rgba(217,119,87,.2);--vg2:rgba(120,110,255,.16);--vc:.3;--va:.3}
+body.void[data-tema=claude]{--ac:#d97757;--acs:#e5906f;--actx:#fff;--tint:rgba(217,119,87,.09);--vg1:rgba(217,119,87,.24);--vg2:rgba(150,100,255,.1);--vc:.4;--va:.2}
+body.void[data-tema=agy]{--ac:linear-gradient(100deg,#4285f4,#8b6cff 55%,#c46bff);--acs:#8fa9ff;--actx:#fff;--tint:rgba(110,140,255,.09);--v1:#7b6cff;--vg1:rgba(110,120,255,.22);--vg2:rgba(66,133,244,.16);--vc:.2;--va:.42}
+body.void[data-tema=duo]{--ac:linear-gradient(100deg,#d97757,#c46bff 55%,#4285f4);--acs:#c08cff;--actx:#fff;--tint:rgba(170,120,255,.08)}
+body.void #fundo .fc,body.void #fundo .fa{opacity:0}body.void #fundo .fv{opacity:1}
+body.void #comp,body.void #barra{background:transparent}body.void #barra{border-top-color:transparent}
+body.void header,body.void aside,body.void #trilho{background:#000}
+body.void .m.u .corpo{background:#0b0b0b;border-color:#1c1c1c}
+body.void .caixa{background:rgba(0,0,0,.82);border-color:#262626;box-shadow:0 0 0 1px rgba(0,0,0,.6),0 10px 40px rgba(0,0,0,.9)}
+body.void[data-tema=claude] .caixa:focus-within{border-color:#d9775766;box-shadow:0 0 0 1px #d9775733,0 0 34px rgba(217,119,87,.12)}
+body.void[data-tema=agy] .caixa:focus-within{border-color:#7b8cff66;box-shadow:0 0 0 1px #7b8cff33,0 0 34px rgba(110,130,255,.13)}
+body.void[data-tema=duo] .caixa:focus-within{border-color:#b48cff66;box-shadow:0 0 0 1px #c08cff33,0 0 34px rgba(196,107,255,.13)}
+body.void dialog{background:#070707;border-color:#262626;box-shadow:0 0 0 1px #000,0 40px 120px rgba(0,0,0,.95)}
+body.void dialog::backdrop{background:rgba(0,0,0,.72)}
+body.void .seg{background:#000}body.void .seg button.on{background:#1a1a1a;box-shadow:none}
+body.void .item:hover{background:#0c0c0c}body.void .item.on{background:var(--tint);border-color:#262626}
+body.void .menu-ctx,body.void .toast{background:#0b0b0b;border-color:#262626}
+body.void .corpo pre{border-color:#1a1a1a}
+/* hidden layers stop moving */
+body[data-tema=claude]:not(.void) #fundo .fa *,body[data-tema=agy]:not(.void) #fundo .fc *,body.void #fundo .fc *,body.void #fundo .fa *,body:not(.void) #fundo .fv *{animation-play-state:paused!important}
+.fv{background:radial-gradient(60vmax 45vmax at 12% 8%,rgba(217,119,87,.045),transparent 70%),radial-gradient(60vmax 50vmax at 92% 18%,rgba(90,110,255,.05),transparent 70%),#000}
+#vCeu{position:absolute;inset:0;width:100%;height:100%}
+.v-tw i{position:absolute;left:var(--x);top:var(--y);width:var(--s);height:var(--s);border-radius:50%;background:#fff;opacity:0;box-shadow:0 0 5px 1px rgba(255,255,255,.35);animation:v-tw var(--d) ease-in-out infinite;animation-delay:var(--dl)}
+@keyframes v-tw{0%,100%{opacity:0;transform:scale(.5)}50%{opacity:var(--o);transform:scale(1)}}
+/* the edge of a dark planet, lit from behind in the two colors */
+.v-hz{position:absolute;left:50%;width:300vmax;height:300vmax;bottom:calc(var(--vhz,15vh) - 300vmax);transform:translateX(-50%);border-radius:50%;background:#000}
+.v-hz::before{content:"";position:absolute;inset:0;border-radius:50%;background:linear-gradient(90deg,transparent 33%,var(--v1) 44%,var(--v2) 50%,var(--v3) 56%,transparent 67%);
+ -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 1.8px),#000 calc(100% - .4px));mask:radial-gradient(farthest-side,transparent calc(100% - 1.8px),#000 calc(100% - .4px));opacity:.85;transition:opacity 1s}
+.v-gl{position:absolute;left:50%;top:-30vh;width:120vw;height:60vh;transform:translateX(-50%);
+ background:radial-gradient(closest-side,var(--vg1),transparent 70%),radial-gradient(closest-side at 62% 55%,var(--vg2),transparent 75%);transition:opacity 1s}
+.v-ar{position:absolute;left:50%;top:0;width:100vw;height:18vh;transform:translateX(-50%);background:radial-gradient(ellipse 50% 100% at 50% 0,rgba(140,120,255,.05),transparent 70%)}
+body.void.trabalhando .v-hz::before{animation:v-pulso 2.6s ease-in-out infinite}
+body.void.trabalhando .v-gl{animation:v-brilho 2.6s ease-in-out infinite}
+@keyframes v-pulso{50%{opacity:1}}
+@keyframes v-brilho{50%{opacity:1.6;transform:translateX(-50%) scale(1.06)}}
+/* the mascots, weightless */
+.v-cl{position:absolute;right:var(--vgd,8vw);top:16vh;width:clamp(70px,min(8.5vw,calc(var(--vgw,200px)*.62)),128px);transform:translateX(50%)}
+.v-clp{animation:v-deriva 21s ease-in-out infinite;will-change:transform}
+#fundo .fv .clawd{fill:var(--v1);opacity:var(--vc);filter:drop-shadow(0 0 10px rgba(217,119,87,.55));transition:opacity 1s}
+body.void[data-tema=agy] #fundo .fv .clawd{fill:#d97757}
+#fundo .fv .clawd .perna-a,#fundo .fv .clawd .perna-b,#fundo .fv .clawd .braco-e,#fundo .fv .clawd .braco-d{animation-play-state:paused}
+body.trabalhando #fundo .fv .clawd .perna-a,body.trabalhando #fundo .fv .clawd .perna-b,body.trabalhando #fundo .fv .clawd .braco-e,body.trabalhando #fundo .fv .clawd .braco-d{animation-play-state:running}
+body.void.trabalhando #fundo .fv .clawd{opacity:calc(var(--vc) + .12)}
+.v-ag{position:absolute;left:var(--vge,30vw);bottom:30vh;--b:clamp(3.5px,min(.6vw,calc(var(--vgw,200px)*.045)),8px);transform:translateX(-50%)}
+.v-agp{animation:v-deriva2 26s ease-in-out infinite;opacity:var(--va);filter:drop-shadow(0 0 9px rgba(110,140,255,.5));transition:opacity 1s;will-change:transform}
+body.void.trabalhando .v-agp{opacity:calc(var(--va) + .12)}
+body.void.trabalhando .v-agp .agl i{animation:levita2 1.05s ease-in-out infinite;animation-delay:calc(var(--c)*-.09s)}
+@keyframes v-deriva{0%,100%{transform:translate(0,0) rotate(-8deg)}30%{transform:translate(-14px,-20px) rotate(3deg)}65%{transform:translate(10px,-8px) rotate(10deg)}}
+@keyframes v-deriva2{0%,100%{transform:translate(0,0) rotate(6deg)}40%{transform:translate(16px,-14px) rotate(-5deg)}75%{transform:translate(-8px,10px) rotate(2deg)}}
+@media (max-width:760px){.v-cl{top:auto;bottom:calc(var(--vhz,15vh) + 3px);right:9vw;width:46px;transform:none}.v-clp{animation:none}.v-ag{display:none}}   /* phone: Clawd stands on the planet, beside the token counter */
+
 /* ---------------- sidebar ---------------- */
 aside{position:relative;border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--p1)}
 #arrasta{position:absolute;top:0;bottom:0;right:-4px;width:8px;cursor:col-resize;z-index:5;touch-action:none}
@@ -231,6 +285,9 @@ body.claro #agSeg button.on[data-a=claude]{color:#a4472a}body.claro #agSeg butto
 .h2{display:flex;gap:7px;align-items:center;overflow-x:auto;scrollbar-width:none;padding-bottom:1px}
 .h2::-webkit-scrollbar{display:none}
 .h2:empty{display:none}
+.h2.fd{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 46px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 46px),transparent)}
+.h2.fe{-webkit-mask-image:linear-gradient(90deg,transparent,#000 46px);mask-image:linear-gradient(90deg,transparent,#000 46px)}
+.h2.fe.fd{-webkit-mask-image:linear-gradient(90deg,transparent,#000 46px,#000 calc(100% - 46px),transparent);mask-image:linear-gradient(90deg,transparent,#000 46px,#000 calc(100% - 46px),transparent)}
 .chip-sel{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 9px 0 10px;border:1px solid var(--bd);border-radius:999px;background:var(--p2);color:var(--mu);font-size:12.5px;white-space:nowrap;flex:none}
 .chip-sel:hover{border-color:var(--bd2)}
 .chip-sel select{appearance:none;-webkit-appearance:none;background:transparent;border:0;color:var(--tx);font-weight:500;padding:0 14px 0 0;cursor:pointer;max-width:210px;text-overflow:ellipsis}
@@ -273,9 +330,9 @@ body.claro .m.a.lado.claude{--gt:#b4583a}body.claro .m.a.lado.agy{--gt:#4769dc}
 .conv-op b{display:block;font-weight:600}.conv-op small{display:block;color:var(--mu);font-size:11.5px}
 .conv-l{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
 .conv-l>.lbl{width:100%;margin-bottom:-2px}
-.conv-txt{width:100%;min-height:84px;resize:vertical;background:var(--p1);border:1px solid var(--bd2);border-radius:9px;padding:9px 11px;margin:0 0 12px;color:var(--tx);font:inherit}
-.conv-txt:focus{outline:none;border-color:var(--acs)}
-.conv-f{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:6px}.conv-f small{flex:1;color:var(--mu);font-size:11.5px}
+.conv-ex{margin:-4px 0 14px;min-height:3em}
+.conv-f{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:6px;flex-wrap:wrap}.conv-f small{flex:1 1 200px;color:var(--mu);font-size:11.5px}
+.conv-b{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .debate-b{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;width:fit-content;max-width:100%;margin:0 auto 16px;padding:6px 8px 6px 12px;border:1px solid var(--bd);border-radius:16px;background:var(--p1);color:var(--mu);font-size:12.5px}
 .debate-b b{color:var(--tx);font-weight:600}.debate-b svg{color:var(--acs)}
 .m.novo{animation:surge .4s cubic-bezier(.2,.8,.3,1)}
@@ -570,6 +627,7 @@ table.tb tr.tot td{font-weight:700;border-bottom:0}
 mark{background:rgba(255,200,60,.3);color:inherit;border-radius:3px;padding:0 1px}
 mark.foco{box-shadow:0 0 0 2px rgba(255,200,60,.65)}
 #baixo{position:sticky;bottom:10px;z-index:3;display:flex;margin:0 auto;width:34px;height:34px;border-radius:50%;padding:0;box-shadow:0 6px 20px rgba(0,0,0,.45);animation:surge .2s ease-out}
+#baixo.nova::after{content:"";position:absolute;top:1px;right:1px;width:9px;height:9px;border-radius:50%;background:var(--acs);box-shadow:0 0 0 2px var(--p2);animation:surge .3s ease-out}
 .novo-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--acs);margin-right:6px;vertical-align:1px}
 #micBtn.ouvindo{color:#fff;background:#d6453d;animation:pulsaMic 1.2s ease-in-out infinite}
 @keyframes pulsaMic{50%{box-shadow:0 0 0 6px rgba(214,69,61,.25)}}
@@ -667,6 +725,7 @@ kbd{display:inline-block;font:600 11px/1 var(--mono);padding:4px 6px;min-width:2
 <div id="fundo" aria-hidden="true">
  <div class="fc"><div class="brilhos" id="brilhos"></div><div class="clawd-w"><div class="clawd-p"><svg class="clawd" id="clawd" viewBox="0 -1 18 7" shape-rendering="crispEdges"></svg></div><div class="clawd-s"></div></div></div>
  <div class="fa"><div class="aur a1"></div><div class="aur a2"></div><div class="aur a3"></div><div class="orbs" id="orbs"></div><div class="ag-w"><div class="ag-g"></div><div class="ag-p" id="agFundo"></div><div class="ag-s"></div></div></div>
+ <div class="fv"><canvas id="vCeu"></canvas><div class="v-tw" id="vTw"></div><div class="v-hz"><i class="v-gl"></i><i class="v-ar"></i></div><div class="v-cl"><div class="v-clp"><svg class="clawd" id="vClawd" viewBox="0 -1 18 7" shape-rendering="crispEdges"></svg></div></div><div class="v-ag"><div class="v-agp" id="vAg"></div></div></div>
 </div>
 <div id="app">
 <nav id="trilho" aria-label="Compact sidebar">
@@ -767,7 +826,7 @@ const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const plural=(n,s)=>`${n} ${s}${n===1?"":"s"}`;
 
 /* ---------- icons ---------- */
-const P={branch:"M6 3v12M18 9a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",download:"M12 3v12M7 10l5 5l5-5M5 21h14",help:"M12 22a10 10 0 1 0 0-20a10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01",lista:"M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",pin:"M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",plus:"M12 5v14M5 12h14",search:"M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-3.6-3.6",chama:"M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",users:"M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7",
+const P={branch:"M6 3v12M18 9a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6a3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9",download:"M12 3v12M7 10l5 5l5-5M5 21h14",help:"M12 22a10 10 0 1 0 0-20a10 10 0 0 0 0 20zM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01",lista:"M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",pin:"M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z",plus:"M12 5v14M5 12h14",troca:"M7 4L3 8l4 4M3 8h13M17 12l4 4-4 4M21 16H8",search:"M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-3.6-3.6",chama:"M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2zM18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1",users:"M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.15a3.5 3.5 0 0 1 0 6.7",
  import:"M12 4v11M7.5 10.5L12 15l4.5-4.5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2",phone:"M8 3h8a1.5 1.5 0 0 1 1.5 1.5v15A1.5 1.5 0 0 1 16 21H8a1.5 1.5 0 0 1-1.5-1.5v-15A1.5 1.5 0 0 1 8 3zM11 18h2",
  sparkles:"M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",folder:"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",mais:"M5 12h.01M12 12h.01M19 12h.01",
  copy:"M9 9h10v10H9zM5 15V5h10",trash:"M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",stop:"M7 7h10v10H7z",send:"M12 19V5M5.5 11.5L12 5l6.5 6.5",
@@ -812,9 +871,9 @@ function avatarDuo(grande,a,b){const m=x=>x==="claude"?spark(grande?14:10):logoA
 const temaDe=c=>c&&c.duo&&c.convidado&&c.convidado.agente!==c.agente?"duo":(c?c.agente:"claude");
 const avatarDe=c=>c.duo?avatarDuo(false,c.agente,c.duo):avatar(c.agente);
 const avatar=(ag,grande)=>{const a=el("div",{class:"av"+(grande?" g":"")});a.append(ag==="claude"?spark(grande?20:15):logoAg(grande?"1.75px":"1.3px","parado"));return a};
-(function montaFundo(){
+function pintaClawd(svg){
  const mapa=["000111111111111000","000110111111011000","011111111111111110","000111111111111000","000010100001010000"];
- const ns="http://www.w3.org/2000/svg",svg=$("#clawd");
+ const ns="http://www.w3.org/2000/svg";
  const g=n=>{const e=document.createElementNS(ns,"g");if(n)e.setAttribute("class",n);svg.append(e);return e};
  const corpo=g(),be=g("braco-e"),bd=g("braco-d"),pa=g("perna-a"),pb=g("perna-b"),pl=g();
  const px=(par,x,y,c)=>{const r=document.createElementNS(ns,"rect");r.setAttribute("x",x);r.setAttribute("y",y);r.setAttribute("width",1.02);r.setAttribute("height",1.02);if(c)r.setAttribute("class",c);par.append(r)};
@@ -823,20 +882,48 @@ const avatar=(ag,grande)=>{const a=el("div",{class:"av"+(grande?" g":"")});a.app
   if(y===4)return px(x===4||x===13?pa:pb,x,y);
   px(corpo,x,y)}));
  px(pl,5,1,"palp");px(pl,12,1,"palp");
+}
+(function montaFundo(){
+ pintaClawd($("#clawd"));pintaClawd($("#vClawd"));
  const B=$("#brilhos"),gl=["✻","✳","✶","✢","✽"];
  for(let i=0;i<9;i++)B.append(el("i",{style:`--x:${(i*37+7)%92}%;--y:${(i*53+11)%78}%;--s:${14+(i*7)%26}px;--o:${.08+(i%4)*.05};--d:${16+(i*5)%18}s`},gl[i%gl.length]));
  const O=$("#orbs"),cores=["#4285f4","#8b6cff","#34a853","#c46bff","#5ab0ff","#fbbc04","#ea4335"];
  for(let i=0;i<14;i++){const s=8+(i*13)%46;O.append(el("i",{class:i%4===1?"anel":null,style:`--x:${(i*29+5)%96}%;--s:${s}px;--r:${i%5===3?"28%":"50%"};--c:${cores[i%cores.length]};--o:${.18+(i%3)*.12};--d:${22+(i*7)%26}s;--dl:-${(i*4.3)%30}s;--dx:${((i*17)%60)-30}px`}))}
  $("#agFundo").append(logoAg(null,"",6));
+ $("#vAg").append(logoAg(null,"",4));
+ const T=$("#vTw");for(let i=0;i<16;i++)T.append(el("i",{style:`--x:${(i*61+13)%97}%;--y:${(i*37+5)%74}%;--s:${1.4+(i%3)*.5}px;--o:${.35+(i%4)*.15};--d:${5+(i*7)%9}s;--dl:-${(i*1.9)%9}s`}));
 })();
+/* Void's sky: a few hundred faint stars, drawn once per size (nothing moves, nothing to repaint) */
+let CEU="";
+function pintaCeu(){
+ if(!document.body.classList.contains("void"))return;
+ const c=$("#vCeu"),r=devicePixelRatio||1,w=innerWidth,h=innerHeight,k=w+"x"+h+"@"+r;if(CEU===k)return;CEU=k;
+ c.width=Math.round(w*r);c.height=Math.round(h*r);const g=c.getContext("2d");g.setTransform(r,0,0,r,0,0);g.clearRect(0,0,w,h);
+ let sem=7;const rnd=()=>(sem=(sem*16807)%2147483647)/2147483647;
+ const n=Math.round(w*h/5200);
+ for(let i=0;i<n;i++){const x=rnd()*w,y=rnd()*h*.92,z=rnd(),a=.05+Math.pow(rnd(),2.2)*.55,t=rnd();
+  g.fillStyle=t<.07?`rgba(255,200,180,${a})`:t<.15?`rgba(190,205,255,${a})`:`rgba(255,255,255,${a})`;
+  g.beginPath();g.arc(x,y,z<.9?.45+z*.35:.9+z*.5,0,6.283);g.fill()}
+}
+addEventListener("resize",()=>{clearTimeout(pintaCeu.t);pintaCeu.t=setTimeout(pintaCeu,200)});
+/* the mascots float in the empty space on each side of the chat column */
+function posMascotes(){
+ const m=document.querySelector("main").getBoundingClientRect(),c=$("#col").getBoundingClientRect();if(!m.width)return;
+ const g=Math.max(0,(m.width-c.width)/2-18),r=document.documentElement.style;
+ r.setProperty("--vgw",g+"px");
+ const k=$(".caixa");if(k)r.setProperty("--vhz",Math.round(innerHeight-k.getBoundingClientRect().top+16)+"px");   // the horizon just above the message box
+ r.setProperty("--vgd",(innerWidth-m.right+9+g/2)+"px");r.setProperty("--vge",(m.left+9+g/2)+"px");
+}
+if(window.ResizeObserver){const ro=new ResizeObserver(()=>requestAnimationFrame(posMascotes));ro.observe(document.querySelector("main"));ro.observe($("#col"));ro.observe($("#comp"))}
 /* ---------- appearance: theme mode, chat width, text size ---------- */
 const APAR={modo:LS.get("ag.modo","escuro"),largura:LS.get("ag.largura","normal"),fonte:LS.get("ag.fonte","m")};
 const MQCLARO=matchMedia("(prefers-color-scheme: light)");
 const claro=()=>APAR.modo==="claro"||(APAR.modo==="sistema"&&MQCLARO.matches);
-function corMeta(){document.querySelector('meta[name=theme-color]').content=claro()?({agy:"#f6f7fc",duo:"#f8f6fb"}[TEMA]||"#faf9f5"):({agy:"#05060a",duo:"#100e13"}[TEMA]||"#1a1917")}
+function corMeta(){document.querySelector('meta[name=theme-color]').content=APAR.modo==="void"?"#000000":claro()?({agy:"#f6f7fc",duo:"#f8f6fb"}[TEMA]||"#faf9f5"):({agy:"#05060a",duo:"#100e13"}[TEMA]||"#1a1917")}
 function aplicaAparencia(redesenha){
  const antes=document.body.classList.contains("claro"),agora=claro(),r=document.documentElement.style;
  document.body.classList.toggle("claro",agora);
+ document.body.classList.toggle("void",APAR.modo==="void");pintaCeu();
  r.setProperty("--col",{normal:"860px",largo:"1180px",cheio:"100%"}[APAR.largura]||"860px");
  r.setProperty("--fs",String({p:.92,m:1,g:1.1,gg:1.22}[APAR.fonte]||1));
  corMeta();
@@ -1410,7 +1497,10 @@ function desenharCab(){
   const gm=(MODELOS[g.agente]||[]).map(m=>[m.id,m.nome||m.id]);gm.unshift(["","Default model"]);
   const k=chipSel("cpu","Model",gm,g.modelo||"",v=>salvarConv({modelo:v}));k.title=(g.nome||CURTO[g.agente])+" model";C.append(k);
   if(g.agente==="claude"){const e=chipSel("gauge","Reasoning effort",EFFORT,g.effort||"",v=>salvarConv({effort:v}));e.title=(g.nome||CURTO[g.agente])+" effort";C.append(e)}
-  const sai=el("button",{class:"chip-sel btnc",title:`Take ${g.nome||CURTO[g.agente]} out of this chat`});sai.innerHTML=ic("x",14)+"Leave";sai.onclick=()=>sairDuo();C.append(sai)}
+  const gn=g.nome||CURTO[g.agente],so=el("button",{class:"chip-sel btnc",title:`Go on with ${gn} alone: ${CURTO[c.agente]} leaves and ${gn} answers from now on`});
+  so.innerHTML=ic("troca",14)+"Keep only";so.onclick=()=>ficarSo({},gn);C.append(so);
+  const sai=el("button",{class:"chip-sel btnc",title:`Take ${gn} out of this chat, ${CURTO[c.agente]} goes on alone`});sai.innerHTML=ic("x",14)+"Remove";sai.onclick=()=>sairDuo();C.append(sai)}
+ C.scrollLeft=0;requestAnimationFrame(bordasChips);
  $("#dica").textContent=(c.sessao?`Session ${c.sessao.slice(0,8)} · `:"New session · ")+"Enter to send, Shift+Enter for a new line, drop or paste files to attach";
  $("#txt").placeholder=g?`Message ${CURTO[c.agente]} and ${g.nome||CURTO[g.agente]}…`:c.agente==="claude"?"Message Claude…":"Ask Antigravity…";
  if(g)$("#dica").textContent=`Both answer: ${CURTO[c.agente]} first, then ${g.nome||CURTO[g.agente]} builds on it · `+$("#dica").textContent;
@@ -1426,8 +1516,8 @@ const movido=(v,f)=>"Now on "+contaNome(v)+(f&&(f.modelo||f.effort)?" · keeps "
 async function salvarConv(d){if(!CHAT)return;try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/convidado`,d));desenharCab();carregarEstado()}catch(e){toast(cap(e.message))}}
 async function sairDuo(){
  if(!CHAT||!CHAT.convidado)return;const n=CHAT.convidado.nome||CURTO[CHAT.convidado.agente];
- if(!confirm(`Take ${n} out of this chat? Its replies stay, and Call another AI brings it back where it left off.`))return;
- try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/convidado`,{sair:true}));setTema(temaDe(CHAT),$("#cabAv"));desenharCab();desenharMsgs();carregarEstado();toast(`${n} left the chat`)}catch(e){toast(cap(e.message))}
+ if(!confirm(`Remove ${n} from this chat? Its replies stay, and Call another AI brings it back where it left off.`))return;
+ try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/convidado`,{sair:true}));setTema(temaDe(CHAT),$("#cabAv"));desenharCab();desenharMsgs();carregarEstado();toast(`${n} was removed from the chat`)}catch(e){toast(cap(e.message))}
 }
 async function salvarCfg(campo,valor){if(!CHAT)return;try{CHAT=Object.assign(CHAT,await api(`/api/chats/${CHAT.id}/config`,{[campo]:valor}));desenharCab();carregarEstado()}catch(e){toast(cap(e.message))}}
 $("#titulo").onchange=e=>salvarCfg("titulo",e.target.value.trim()||"New chat");
@@ -1458,17 +1548,21 @@ function vazio(){
  if(ps.length){const s2=el("div",{class:"sugs meus"});for(const p of ps){const b=el("button",{class:"sug meu",title:p.texto.slice(0,300),onclick:()=>usaPrompt(p)});b.innerHTML=ic("bolt",18);b.append(el("span",{},p.nome));s2.append(b)}v.append(s2)}
  return v;
 }
+let DESENHADO=null;
 function desenharMsgs(){
- const M=$("#col");M.textContent="";
+ const M=$("#col"),S=$("#msgs"),mesmo=!!CHAT&&DESENHADO===CHAT.id,y=S.scrollTop;M.textContent="";
  if(!CHAT||!CHAT.mensagens.length)M.append(vazio());
  if(CHAT)CHAT.mensagens.forEach((m,i)=>{const b=m.papel==="usuario"?blocoUsuario(m,i):blocoAssist(m,i);b.dataset.i=i;M.append(b)});
- desenharFila();desenharBarra();rolar(true);
+ desenharFila();desenharBarra();DESENHADO=CHAT?CHAT.id:null;
+ /* the same chat drawn again (a reply ended, a setting changed): you stay where you were reading */
+ if(!mesmo||(ROL.preso&&ROL.seguir))rolar("abrir");else{if(!ROL.raf)poeTopo(S,Math.min(y,maxM(S)));botaoBaixo()}
 }
 function desenharFila(){
  const F=$("#fila");F.textContent="";if(!CHAT)return;
  const corre=!!(CHAT.rodando||VIVO);
  if(CHAT.debate&&CHAT.convidado&&corre){const d=CHAT.debate,w=el("div",{class:"debate-b"});w.innerHTML=ic("chama",14);
-  w.append(el("span",{html:`Debate with <b>${esc(CHAT.convidado.nome||CURTO[CHAT.convidado.agente])}</b> · reply ${Math.min(d.total,(d.feitas||0)+1)} of ${d.total}`}));
+  const tot=+d.total||0,n=(d.feitas||0)+1;
+  w.append(el("span",{html:`Debate with <b>${esc(CHAT.convidado.nome||CURTO[CHAT.convidado.agente])}</b> · reply ${tot?Math.min(tot,n)+" of "+tot:n+" · no limit"}`}));
   const x=el("button",{class:"btn sm",title:"The reply being written now finishes, then the debate stops"},"End after this reply");
   x.onclick=async()=>{try{await api(`/api/chats/${CHAT.id}/debate`,{});CHAT.debate=null;desenharFila();toast("The debate stops after this reply")}catch(e){toast(cap(e.message))}};
   w.append(x);F.append(w)}
@@ -1485,7 +1579,8 @@ async function acaoFila(i,acao){
   if(acao==="enviar"){await abrir(CHAT.id,true)}else{CHAT.fila=r.fila;desenharFila()}carregarEstado()}catch(e){toast(cap(e.message))}
 }
 /* like the server: the other AI's replies (and your messages to it) are skipped, the branch starts at the last reply of the chat's own AI */
-function podeVoltar(i){if(!CHAT||CHAT.agente!=="claude")return false;const ms=CHAT.mensagens;if(ms[i]&&ms[i].para)return false;let j=i-1;while(j>=0&&(ms[j].convidado||ms[j].para))j--;if(j<0)return true;const a=ms[j];return!!(a&&a.papel==="assistente"&&a.uuid&&CHAT.sessao)}
+function podeVoltar(i){if(!CHAT||CHAT.agente!=="claude")return false;const ms=CHAT.mensagens;if(ms[i]&&ms[i].para)return false;let j=i-1;while(j>=0&&(ms[j].convidado||ms[j].para))j--;const k=CHAT.assumiu;if(k&&j<k.em)return true;   // before or right after a Keep only: it starts again from there
+if(j<0)return true;const a=ms[j];return!!(a&&a.papel==="assistente"&&a.uuid&&CHAT.sessao)}
 function blocoUsuario(m,i){
  const tx=m.texto||"",cp=el("div",{class:"corpo"},tx);
  const b=el("div",{class:"m u"+(m.para?" para":"")},el("div",{class:"cab-m"},m.auto?el("span",{class:"auto",title:"Sent by Agents after the account switch"},"automatic"):null,el("span",{},m.ts?quando(m.ts):""),el("b",{},"You"),m.para?el("span",{class:"seta"},"to"):null,m.para?el("b",{},m.para):null),cp);
@@ -1506,7 +1601,7 @@ async function reenviarMsg(i,texto){
  const depois=CHAT.mensagens.length-i-1;
  if(depois>1&&!confirm(`This replaces the ${depois} messages after it in this chat. The original conversation stays in Claude Code. Continue?`))return;
  try{await api(`/api/chats/${CHAT.id}/reenviar`,{indice:i,texto})}catch(e){toast(cap(e.message));return}
- CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();rodando(true);escutar(0);carregarEstado();
+ CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();rodando(true);escutar(0);rolar(true);carregarEstado();
 }
 function editarMsg(b,m,i){
  if(ocupado()){toast("Stop the current reply first");return}
@@ -1741,7 +1836,7 @@ function blocoAssist(m,i){
  const h=cabAssist(ag,el("span",{},(m.ts?quando(m.ts):"")+(m.importada?" · imported from CLI":"")),g&&(g.nome||CURTO[g.agente]));
  if(lado)for(const x of rotulosModelo(m))h.append(x);
  if(m.debate)h.append(el("span",{class:"auto",title:"A debate turn, sent by Agents"},"debate"));
- else if(g&&!m.duo)h.append(el("span",{class:"auto",title:"Called into this chat with Call another AI"},"guest"));
+ else if(g&&!m.duo&&!m.anfitriao)h.append(el("span",{class:"auto",title:"Called into this chat with Call another AI"},"guest"));
  b.append(h);
  if(m.pensamento){const p=el("details",{class:"pens"});const s=el("summary",{});s.innerHTML=ic("brain",14)+"Thinking";p.append(s,el("div",{class:"ptxt"},m.pensamento));b.append(p)}
  if(m.ferramentas&&m.ferramentas.length){if(m.ferramentas.length>=3)b.append(grupoFerrs(m.ferramentas,false).d);else{const f=el("div",{class:"ferrs"});for(const x of m.ferramentas)f.append(blocoFerr(x));b.append(f)}}
@@ -1769,10 +1864,72 @@ function desenharBarra(ctxVivo){
  if(c.usado){const pc=c.janela?Math.min(100,c.usado/c.janela*100):0;B.append(el("span",{class:"st1",html:`<span class="lbl">Context</span><b>${fmt(c.usado)}${c.janela?" / "+fmt(c.janela):""}</b>${c.janela?`<span class="ctxm"><u style="width:${Math.max(1,pc)}%"></u></span><b>${pc.toFixed(1)}%</b>`:""}`}))}
  const cc=EST.contas.find(x=>x.id===CHAT.conta);if(cc){const ls=resumoConta(cc).ls;for(const j of (cc.agente==="agy"?[...ls].sort((a,b)=>b.p-a.p):ls).slice(0,2))add(j.n,fmtP(j.p),j.z?"Resets "+diaHora(j.z):"")}
 }
-function rolar(forcar){const M=$("#msgs");if(forcar||M.scrollHeight-M.scrollTop-M.clientHeight<180)M.scrollTop=M.scrollHeight;botaoBaixo()}
-function botaoBaixo(){const M=$("#msgs");$("#baixo").hidden=M.scrollHeight-M.scrollTop-M.clientHeight<400}
-$("#msgs").addEventListener("scroll",botaoBaixo,{passive:true});
-$("#baixo").onclick=()=>{const M=$("#msgs");M.scrollTo({top:M.scrollHeight,behavior:document.body.classList.contains("sem-anim")?"auto":"smooth"})};
+/* ---------- scrolling: the wheel glides, and a reply is followed only while you sit at the end ----------
+   preso: you are at the end of the chat. Scrolling up by any means (wheel, touch, keys, scrollbar) lets go,
+   coming back to the end takes it again. With Auto scroll off nothing moves by itself, ever. */
+const ROL={seguir:LS.get("ag.seguir","1")!=="0",suave:LS.get("ag.suave","1")!=="0",preso:true,novo:false,
+ alvo:0,raf:0,t:0,fundo:false,meu:-1,y:0,tp:-1e4};
+const animOk=()=>!document.body.classList.contains("sem-anim")&&!matchMedia("(prefers-reduced-motion: reduce)").matches;
+const maxM=M=>Math.max(0,M.scrollHeight-M.clientHeight);
+function poeTopo(M,y){M.scrollTop=y;ROL.meu=M.scrollTop}
+function paraRol(){if(ROL.raf)cancelAnimationFrame(ROL.raf);ROL.raf=0;ROL.t=0;ROL.fundo=false}
+function passoRol(t){
+ const M=$("#msgs");if(ROL.fundo)ROL.alvo=maxM(M);
+ const dt=ROL.t?Math.min(48,t-ROL.t):16.7;ROL.t=t;
+ const y=M.scrollTop,d=ROL.alvo-y;
+ if(Math.abs(d)<.6){poeTopo(M,ROL.alvo);ROL.raf=0;ROL.t=0;ROL.fundo=false;botaoBaixo();return}
+ poeTopo(M,y+d*(1-Math.exp(-dt/(ROL.fundo?70:95))));
+ if(Math.abs(M.scrollTop-y)<.01&&Math.abs(d)<3){ROL.raf=0;ROL.t=0;ROL.fundo=false;return}   // cannot move any further
+ ROL.raf=requestAnimationFrame(passoRol);
+}
+function rolarPara(y,suave){
+ const M=$("#msgs");y=Math.max(0,Math.min(maxM(M),y));
+ if(!suave||!animOk()){paraRol();poeTopo(M,y);botaoBaixo();return}
+ ROL.alvo=y;if(!ROL.raf){ROL.t=0;ROL.raf=requestAnimationFrame(passoRol)}
+}
+function irFundo(suave){ROL.preso=true;ROL.novo=false;if(suave&&animOk()){ROL.fundo=true;rolarPara(maxM($("#msgs")),true)}else rolarPara(1e9,false)}
+/* "abrir": a chat was opened, straight to its end. true: you did something (sent, queued): glide to the end.
+   Nothing: new text in a reply, followed only while you are at the end and Auto scroll is on. */
+function rolar(modo){
+ const M=$("#msgs");
+ if(modo==="abrir")irFundo(false);
+ else if(modo)irFundo(true);
+ else if(ROL.seguir&&ROL.preso){if(maxM(M)-M.scrollTop>1)irFundo(true)}
+ else if(maxM(M)-M.scrollTop>40)ROL.novo=true;
+ botaoBaixo();
+}
+function botaoBaixo(){const M=$("#msgs"),b=$("#baixo"),d=maxM(M)-M.scrollTop;b.hidden=d<(ROL.novo?60:400);b.classList.toggle("nova",ROL.novo&&!b.hidden)}
+$("#msgs").addEventListener("scroll",()=>{
+ const M=$("#msgs"),y=M.scrollTop;
+ if(Math.abs(y-ROL.meu)>1.5){   // not this page: touch, keys, the scrollbar, a wheel left to the browser
+  if(ROL.raf&&performance.now()-ROL.tp>=300)paraRol();
+  if(y<ROL.y-.5)ROL.preso=false}
+ if(maxM(M)-y<3){ROL.preso=true;ROL.novo=false}
+ ROL.y=y;botaoBaixo();
+},{passive:true});
+$("#msgs").addEventListener("wheel",e=>{
+ const M=$("#msgs");
+ if(e.ctrlKey||Math.abs(e.deltaX)>Math.abs(e.deltaY))return;
+ const dy=e.deltaY*(e.deltaMode===1?40:e.deltaMode===2?M.clientHeight:1);
+ /* a box inside a message that can still scroll that way (code, tool output, thinking) scrolls itself */
+ for(let n=e.target;n&&n!==M;n=n.parentElement){
+  if(n.scrollHeight>n.clientHeight+1){const o=getComputedStyle(n).overflowY;if((o==="auto"||o==="scroll")&&(dy>0?n.scrollTop+n.clientHeight<n.scrollHeight-1:n.scrollTop>0))return}}
+ if(dy<0&&M.scrollTop>0)ROL.preso=false;
+ if(!ROL.suave||!animOk())return;
+ const ag=performance.now();
+ if(e.deltaMode===0&&Math.abs(dy)<25)ROL.tp=ag;   // a touchpad: small steps with momentum of its own, left alone
+ if(ag-ROL.tp<300){paraRol();return}
+ e.preventDefault();
+ const base=ROL.raf&&!ROL.fundo?ROL.alvo:M.scrollTop;ROL.fundo=false;
+ rolarPara(base+dy,true);
+},{passive:false});
+$("#baixo").onclick=()=>irFundo(true);
+/* the chat settings row: the mouse wheel slides it sideways, and its edges fade where more chips are hidden */
+function bordasChips(){const h=$("#chips"),x=h.scrollLeft,f=h.scrollWidth-h.clientWidth-x;h.classList.toggle("fe",x>2);h.classList.toggle("fd",f>2)}
+$("#chips").addEventListener("scroll",bordasChips,{passive:true});
+$("#chips").addEventListener("wheel",e=>{const h=$("#chips");if(e.ctrlKey||Math.abs(e.deltaX)>=Math.abs(e.deltaY)||h.scrollWidth<=h.clientWidth)return;
+ e.preventDefault();h.scrollBy({left:e.deltaY*(e.deltaMode===1?40:1),behavior:ROL.suave&&animOk()?"smooth":"auto"})},{passive:false});
+if(window.ResizeObserver)new ResizeObserver(bordasChips).observe($("#chips"));
 function rodando(s){const e=$("#envBtn");e.hidden=false;e.classList.toggle("enfileirar",!!s);e.title=s?"Add to queue (goes out when this reply ends)":"Send";e.innerHTML=ic(s?"fila":"send",18);$("#parBtn").hidden=!s;document.body.classList.toggle("trabalhando",!!s)}
 
 /* ---------- thinking indicator ---------- */
@@ -1805,11 +1962,20 @@ function escutar(desde){
  const grp=grupoFerrs([],true,true),pks=el("div",{class:"pks"}),corpo=el("div",{class:"corpo"}),ind=indicador(ag);grp.d.hidden=true;
  b.append(pens,grp.d,pks,ind.w,ind.sk,corpo);
  const vz=$("#col .vazio");if(vz)vz.remove();
- $("#col").append(b);rolar(true);
- VIVO={texto:"",n:desde,ctx:0,nf:0,status:"",t0:Date.now(),pens0:0};let pend=false;
+ $("#col").append(b);rolar();
+ VIVO={texto:"",mostra:0,n:desde,ctx:0,nf:0,status:"",t0:Date.now(),pens0:0};let pend=false,tq=0,custo=0,ult=0;
  const comecou=()=>ind.sk.remove();
  const fimPens=()=>{if(pens.classList.contains("vivo")&&!pens.hidden){pens.classList.remove("vivo");pens.open=false;const s=Math.max(1,Math.round((Date.now()-(VIVO.pens0||VIVO.t0))/1000));psum.innerHTML=ic("brain",14)+`Thought for ${s}s`}};
- const pinta=()=>{if(pend)return;pend=true;requestAnimationFrame(()=>{pend=false;if(!VIVO)return;corpo.innerHTML=md(VIVO.texto)+'<span class="cursor"></span>';b.append(ind.w);rolar()})};
+ /* the text glides in at a steady pace instead of jumping in chunks, and catches up fast when it falls
+    behind; what the page replays when you open a chat that is already writing shows at once */
+ const quadro=t=>{pend=false;if(!VIVO)return;const tot=VIVO.texto.length;
+  if(t-ult<custo*4&&VIVO.mostra<tot){pend=true;requestAnimationFrame(quadro);return}   // a long reply: rebuilding it takes a while, so it skips frames
+  if(animOk()&&Date.now()-VIVO.t0>500&&VIVO.mostra<tot){const dt=tq?Math.min(200,t-tq):16.7;VIVO.mostra=Math.min(tot,VIVO.mostra+Math.max(1,dt*.09,(tot-VIVO.mostra)*dt/170))}
+  else VIVO.mostra=tot;
+  tq=VIVO.mostra<tot?t:0;let n=Math.floor(VIVO.mostra);const k=VIVO.texto.charCodeAt(n-1);if(k>=0xD800&&k<=0xDBFF)n++;
+  const a0=performance.now();corpo.innerHTML=md(VIVO.texto.slice(0,n))+'<span class="cursor"></span>';custo=performance.now()-a0;ult=t;b.append(ind.w);rolar();
+  if(VIVO.mostra<tot){pend=true;requestAnimationFrame(quadro)}};
+ const pinta=()=>{if(pend)return;pend=true;requestAnimationFrame(quadro)};
  ES=new EventSource(`/api/chats/${id}/eventos?desde=${desde}&t=${encodeURIComponent(TOKEN)}`);
  ES.onmessage=e=>{
   const ev=JSON.parse(e.data);
@@ -1829,7 +1995,7 @@ function escutar(desde){
    case"erro":b.append(el("div",{class:"erro"},cap(ev.s)));break;
    case"pedido":{comecou();const novo=cartaoPk(ev),v=pks.querySelector(`[data-pk="${CSS.escape(ev.id)}"]`);if(v)v.replaceWith(novo);else pks.append(novo);
     VIVO.espera=VIVO.espera||{};
-    if(ev.estado==="pendente"){VIVO.espera[ev.id]=PKESPERA[ev.tipo]||PKESPERA.root;pkAlerta(ev,id,CHAT&&CHAT.titulo);rolar(true)}else{delete VIVO.espera[ev.id];PKVISTOS.add(ev.id)}break}
+    if(ev.estado==="pendente"){VIVO.espera[ev.id]=PKESPERA[ev.tipo]||PKESPERA.root;pkAlerta(ev,id,CHAT&&CHAT.titulo);rolar()}else{delete VIVO.espera[ev.id];PKVISTOS.add(ev.id)}break}
    case"fim":{ES.close();ES=null;VIVO=null;pararSpin();rodando(false);const x=EST.chats.find(y=>y.id===id);if(x)x.rodando=false;const fm=ev.msg||{};if(!fm.troca&&!ev.segue)avisar(id,CHAT&&CHAT.titulo,fm.texto,!!fm.erro);abrir(id,true);carregarEstado();carregarUso(conta);break}
   }
  };
@@ -1915,7 +2081,7 @@ async function enviar(fixo){
  if(r.fila){try{CHAT.fila=(await api("/api/chats/"+CHAT.id)).fila}catch{}desenharFila();rolar(true);toast("Queued, it goes out when the current reply ends");carregarEstado();return}
  CHAT=await api("/api/chats/"+CHAT.id);desenharMsgs();
  const u=[...$("#col").querySelectorAll(".m.u")].pop();if(u)u.classList.add("novo");
- rodando(true);escutar(0);carregarEstado();
+ rodando(true);escutar(0);rolar(true);carregarEstado();
 }
 $("#envBtn").onclick=()=>enviar();
 $("#parBtn").onclick=()=>CHAT&&api(`/api/chats/${CHAT.id}/parar`,{}).then(()=>toast("Stopping…")).catch(e=>toast(cap(e.message)));
@@ -1982,13 +2148,17 @@ function dlgChamar(){
  let sel=(cv&&cs.find(c=>c.agente===cv.agente&&c.id===cv.conta))||cs.find(c=>c.agente!==CHAT.agente)||cs.find(c=>c.id!==CHAT.conta)||cs[0];
  if(!sel){toast("Add an account first");return}
  abreDlg("Call another AI","","chamar");const B=$("#dlgB");
+ B.append(el("p",{class:"nota",style:"margin:0 0 14px"},"It reads the whole conversation by itself, so there is nothing to explain. Pick who, and how it takes part."));
  B.append(el("div",{class:"lbl"},"Who"));
  const L=el("div",{class:"conv-ops"});B.append(L);
  const modelo=el("select",{class:"campo"}),esf=el("select",{class:"campo"}),rod=el("select",{class:"campo"});
  for(const[v,n]of EFFORT)esf.append(el("option",{value:v},n));
- for(let n=2;n<=10;n++)rod.append(el("option",{value:n},`${n} rounds · ${n*2} replies`));rod.value="3";
+ for(let n=2;n<=10;n++)rod.append(el("option",{value:n},`${n} rounds · ${n*2} replies`));
+ rod.append(el("option",{value:"inf"},"No limit · until you stop it"));
+ rod.value=[...rod.options].some(o=>o.value===LS.get("ag.rodadas"))?LS.get("ag.rodadas"):"3";
  const meu=()=>cv&&cv.agente===sel.agente&&cv.conta===sel.id;
- const pintaModelos=()=>{modelo.textContent="";const ms=(MODELOS[sel.agente]||[]).map(m=>[m.id,m.nome||nomeModelo(m.id)]);ms.unshift(["","Default model"]);for(const[v,n]of ms)modelo.append(el("option",{value:v},n));modelo.value=meu()&&cv.modelo||"";esf.value=meu()&&cv.effort||"";esf.hidden=sel.agente!=="claude"};
+ const proprio=()=>sel.agente===CHAT.agente&&sel.id===CHAT.conta&&!meu();   // the chat's own account, not as a guest
+ const pintaModelos=()=>{modelo.textContent="";const ms=(MODELOS[sel.agente]||[]).map(m=>[m.id,m.nome||nomeModelo(m.id)]);ms.unshift(["","Default model"]);if(meu()&&cv.modelo&&!ms.some(m=>m[0]===cv.modelo))ms.push([cv.modelo,nomeModelo(cv.modelo)]);for(const[v,n]of ms)modelo.append(el("option",{value:v},n));modelo.value=meu()&&cv.modelo||"";esf.value=meu()&&cv.effort||"";esf.hidden=sel.agente!=="claude"};
  for(const c of cs){const b=el("button",{class:"conv-op"+(c===sel?" on":""),type:"button"});
   b.append(avatar(c.agente),el("div",{},el("b",{},CURTO[c.agente]),el("small",{},(c.nome===CURTO[c.agente]?(c.agente==="agy"?"Google account":"Claude account"):c.nome)+(c.id===CHAT.conta?" · this chat's account":""))));
   b.onclick=()=>{sel=c;L.querySelectorAll(".conv-op").forEach(x=>x.classList.toggle("on",x===b));pintaModelos();pinta()};L.append(b)}
@@ -1998,36 +2168,46 @@ function dlgChamar(){
  for(const[v,n]of[["junto","Join the chat"],["uma","One reply"],["debate","Debate"]]){const b=el("button",{class:v===modo?"on":null,type:"button"},n);b.onclick=()=>{modo=v;seg.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));pinta()};seg.append(b)}
  const rw=el("span",{},rod);
  B.append(el("div",{class:"conv-l"},el("div",{class:"lbl"},"How"),seg,rw));
- const expl=el("p",{class:"nota",style:"margin:-4px 0 12px"});B.append(expl);
- const lt=el("div",{class:"lbl",style:"margin-bottom:6px"});B.append(lt);
- const ta=el("textarea",{class:"conv-txt"});B.append(ta);
- const nota=el("small",{}),ok=el("button",{class:"btn pri"}),sai=el("button",{class:"btn"});sai.innerHTML=ic("x",14)+"Leave";
+ const expl=el("p",{class:"nota conv-ex"});B.append(expl);
+ const nota=el("small",{}),ok=el("button",{class:"btn pri"}),sai=el("button",{class:"btn"}),so=el("button",{class:"btn"});
  sai.onclick=()=>{dlg.close();sairDuo()};
- B.append(el("div",{class:"conv-f"},nota,sai,ok));
+ so.onclick=async()=>{const n=nomeSel();if(await ficarSo({agente:sel.agente,conta:sel.id,modelo:modelo.value,effort:sel.agente==="claude"?esf.value:""},n))dlg.close()};
+ B.append(el("div",{class:"conv-f"},nota,el("span",{class:"conv-b"},so,sai,ok)));
+ function nomeSel(){return meu()&&cv.nome?cv.nome:CURTO[sel.agente]+(sel.agente===CHAT.agente?` (${sel.nome})`:"")}
  function pinta(){
-  rw.hidden=modo!=="debate";const nm=CURTO[sel.agente]+(sel.agente===CHAT.agente?` (${sel.nome})`:"");
-  const ja=CHAT.duo&&meu();sai.hidden=!CHAT.duo||!meu();
-  ok.innerHTML=ic("chama",15)+esc(modo==="junto"?(ja?"Save":"Add "+nm):"Call "+nm);
-  expl.textContent=modo==="junto"?`${nm} joins this chat. Every message you send then goes to both: ${host} answers first, and ${nm} answers right after with ${host}'s reply in front of it, building on it. The theme joins both marks.`
-   :modo==="debate"?`They take turns by themselves, answering each other's points, ${+rod.value*2} replies in all. Stop or End after this reply ends it early.`
-   :`It reads this chat so far and replies once, here, under its own name. ${host} sees that reply with your next message.`;
-  lt.textContent=modo==="junto"?"First message to it":"What should it do";
-  ta.placeholder=modo==="junto"?`Optional. Left empty, it waits for your next message`:`Optional. Empty asks for its own view on ${host}'s last reply`;
-  nota.textContent="Each reply uses the quota of the account that writes it."}
- rod.onchange=pinta;pintaModelos();pinta();
- ta.onkeydown=e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();ok.click()}};
- ok.onclick=async()=>{if(!CHAT)return;if(modo!=="junto"&&!CHAT.mensagens.length&&!ta.value.trim()){toast("The chat is empty. Tell it what to do");ta.focus();return}
+  rw.hidden=modo!=="debate";const nm=nomeSel(),inf=rod.value==="inf";
+  const ja=CHAT.duo&&meu();sai.hidden=!ja;so.hidden=proprio();
+  sai.innerHTML=ic("x",14)+"Remove "+esc(nm);so.innerHTML=ic("troca",14)+"Keep only "+esc(nm);
+  so.title=`Go on with ${nm} alone: ${host} leaves this chat and ${nm} answers from now on, knowing the whole conversation`;
+  ok.innerHTML=ic("chama",15)+esc(modo==="junto"?(ja?"Save":"Add "+nm):modo==="uma"?"Ask "+nm:"Start the debate");
+  ok.disabled=modo==="junto"&&proprio();
+  expl.textContent=modo==="junto"?`${nm} joins and sees everything said so far. From your next message on both answer: ${host} first, then ${nm}, building on that reply.`
+   :modo==="debate"?`${nm} answers ${host}'s last reply, then they keep answering each other by themselves, ${inf?"until you press Stop or End after this reply":`${+rod.value*2} replies in all`}. Nobody tells them it is a debate: each one just gets the other's reply, as in a normal chat.`
+   :`${nm} reads the chat and replies once, here, under its own name. ${host} sees that reply with your next message.`;
+  nota.textContent=modo==="debate"&&inf?"Each reply uses the quota of the account that writes it, so a debate with no limit keeps using both until you stop it.":"Each reply uses the quota of the account that writes it."}
+ rod.onchange=()=>{LS.set("ag.rodadas",rod.value);pinta()};pintaModelos();pinta();
+ ok.onclick=async()=>{if(!CHAT)return;if(modo!=="junto"&&!CHAT.mensagens.length){toast("The chat is empty. Send a message first");return}
   ok.disabled=true;pedirAviso();const antes=temaDe(CHAT);let r;
   try{
-   if(modo==="junto"&&CHAT.duo&&meu()&&!ta.value.trim())r=await api(`/api/chats/${CHAT.id}/convidado`,{modelo:modelo.value,effort:esf.value}).then(()=>({rodando:false}));
-   else r=await api(`/api/chats/${CHAT.id}/convidar`,{agente:sel.agente,conta:sel.id,modelo:modelo.value,effort:sel.agente==="claude"?esf.value:"",texto:ta.value,modo,rodadas:modo==="debate"?+rod.value:0})}
+   if(modo==="junto"&&CHAT.duo&&meu())r=await api(`/api/chats/${CHAT.id}/convidado`,{modelo:modelo.value,effort:esf.value}).then(()=>({rodando:false}));
+   else r=await api(`/api/chats/${CHAT.id}/convidar`,{agente:sel.agente,conta:sel.id,modelo:modelo.value,effort:sel.agente==="claude"?esf.value:"",modo,
+    rodadas:modo==="debate"&&rod.value!=="inf"?+rod.value:0,sem_limite:modo==="debate"&&rod.value==="inf"})}
   catch(e){ok.disabled=false;toast(cap(e.message));return}
   dlg.close();CHAT=await api("/api/chats/"+CHAT.id);
   if(temaDe(CHAT)!==antes)setTema(temaDe(CHAT),$("#chamaBtn"));
   desenharCab();desenharMsgs();carregarEstado();
-  if(r.rodando){rodando(true);escutar(0)}
+  if(r.rodando){rodando(true);escutar(0);rolar(true)}
   else if(modo==="junto"){const g=CHAT.convidado;toast(`${g.nome||CURTO[g.agente]} joined. Your messages now go to both`);$("#txt").focus()}};
- setTimeout(()=>ta.focus(),50);
+ setTimeout(()=>ok.focus(),50);
+}
+/* Keep only: the other AI becomes this chat's own, the one that had it can come back as the guest */
+async function ficarSo(d,nome){
+ if(!CHAT)return false;if(ocupado()){toast("Wait for the current reply to finish");return false}
+ const h=CURTO[CHAT.agente];
+ if(!confirm(`Go on with ${nome} only? ${h} leaves this chat (its replies stay) and ${nome} answers from now on, with the whole conversation in front of it.`))return false;
+ try{const r=await api(`/api/chats/${CHAT.id}/assumir`,d||{});CHAT={...r,rodando:false};
+  setTema(temaDe(CHAT),$("#cabAv"));desenharCab();desenharMsgs();carregarEstado();toast(`Only ${nome} now · Call another AI brings ${h} back`);$("#txt").focus();return true}
+ catch(e){toast(cap(e.message));return false}
 }
 $("#dupBtn").onclick=async()=>{if(!CHAT)return;try{const n=await api(`/api/chats/${CHAT.id}/duplicar`,{});await carregarEstado();abrir(n.id);toast("New chat with the same settings")}catch(e){toast(cap(e.message))}};
 $("#apaBtn").onclick=()=>CHAT&&confirmarApagar([CHAT.id]);
@@ -2111,9 +2291,11 @@ function ajustes(){
  const tog=(on,fn)=>{const k=el("input",{type:"checkbox",class:"tog"});k.checked=on;k.onchange=()=>fn(k.checked);return k};
  const segA=(ops,val,fn)=>{const g=el("div",{class:"seg ajuste"});for(const[v,n]of ops){const b=el("button",{class:v===val?"on":null},n);b.onclick=()=>{g.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));fn(v)};g.append(b)}return g};
  B.append(el("div",{class:"lbl",style:"margin:0 0 8px"},"Appearance"));
- linha("Theme","Dark, light, or follow the system setting",segA([["escuro","Dark"],["claro","Light"],["sistema","System"]],APAR.modo,v=>{APAR.modo=v;LS.set("ag.modo",v);aplicaAparencia(true)}));
+ linha("Theme","Void: pitch black, stars and both mascots",segA([["escuro","Dark"],["void","Void"],["claro","Light"],["sistema","System"]],APAR.modo,v=>{APAR.modo=v;LS.set("ag.modo",v);aplicaAparencia(true)}));
  linha("Chat width","How wide messages and the message box get",segA([["normal","Normal"],["largo","Wide"],["cheio","Full"]],APAR.largura,v=>{APAR.largura=v;LS.set("ag.largura",v);aplicaAparencia(false)}));
  linha("Text size","Messages and the message box",segA([["p","Small"],["m","Default"],["g","Large"],["gg","Larger"]],APAR.fonte,v=>{APAR.fonte=v;LS.set("ag.fonte",v);aplicaAparencia(false);ajusta()}));
+ linha("Smooth scrolling","The mouse wheel glides through the chat instead of jumping",tog(ROL.suave,v=>{ROL.suave=v;LS.set("ag.suave",v?"1":"0")}));
+ linha("Auto scroll","Off: the page never moves by itself while a reply is written",tog(ROL.seguir,v=>{ROL.seguir=v;LS.set("ag.seguir",v?"1":"0");botaoBaixo()}));
  if(!movel())linha("Chat list","Show the full list, or keep a slim bar of icons for more room (Ctrl+B)",tog(!recolhido(),v=>recolher(!v)));
  linha("Animations","Mascot, logo and thinking motion",tog(!document.body.classList.contains("sem-anim"),v=>{document.body.classList.toggle("sem-anim",!v);LS.set("semanim",v?"0":"1")}));
  {const b=el("button",{class:"btn sm"});b.innerHTML=ic("teclado",14)+"Show";b.onclick=dlgAtalhos;linha("Keyboard shortcuts","Ctrl+/ or ? shows them at any time",b)}

@@ -123,7 +123,8 @@ What each side reads is worked out from the messages, with no counters to drift:
 - The chat's own AI gets, ahead of your next message, the guest replies and your messages to the guest since
   its own last reply that did not fail (a failed reply may never have reached its session).
 
-A debate is `debate: {total, feitas}` in the chat. When a reply ends without error or stop, `finalizar` first
+A debate is `debate: {total, feitas}` in the chat (`total` 0 means no limit). Neither side gets debate
+instructions: each turn is the other AI's new reply, framed like any guest reply. When a reply ends without error or stop, `finalizar` first
 sends a queued message, and otherwise starts the next debate turn (the guest after the chat's AI, the chat's
 AI after the guest) before the `fim` event, like the queue. The chat's AI turns are hidden runs with no
 message of yours. Stop, an error, or `chats/<id>/debate` ends it. `fim` carries `segue: true` when another
@@ -136,6 +137,17 @@ repeat it) and the chat's AI is told the guest answers after it. If the guest ca
 saved under its name, `duo` becomes false and the queue goes on. `chats/<id>/convidado` changes the guest's
 model or effort (refused while the guest is writing) or ends the team with `sair`. The page reads `duo` and the
 two agents to pick the joined theme.
+
+Keep only (`chats/<id>/assumir`) swaps the chat's AI and the guest: agent, account, model, effort, permission
+mode and session. The old host's sessions move to `sids_conv`, and the old host becomes the guest, so it can be
+called back. Messages are retagged so the transcript still says who wrote what: the new host's replies lose
+`convidado`, and their `uuid` becomes `sem_ramo` (they belong to another CLI session, so Edit and Fork cannot
+branch from them), while the old host's replies gain `convidado` and `anfitriao`. `ponte` is the index from
+which the new host has not seen the chat; its next prompt carries those messages (or the whole chat as a
+transcript when it had no session yet), and `ponte` is dropped after its first reply that did not fail.
+`assumiu: {em, uuid, ponte}` remembers the switch point, so an edit right after it resumes the session where it
+stood and passes the missed part again. An edit before it starts a new session that gets the chat up to there
+as a transcript, and the switch point moves to the edited message. Fork works from replies written after it.
 
 Each saved reply carries `effort`, from `esforco_resposta`: for Claude the chat's effort or, when unset, the
 account's default in `settings.json`; for Antigravity the effort suffix of the model id.
@@ -254,7 +266,8 @@ that way. They are stable identifiers, not text shown to users.
 | `chats/<id>/parar` | POST | stop the running reply |
 | `chats/<id>/config` | POST | rename, change model, effort, permission mode, account or folder |
 | `chats/<id>/fila` | POST | edit, reorder or clear queued messages |
-| `chats/<id>/convidar` | POST | call another AI into the chat (`agente`, `conta`, `modelo`, `effort` for Claude, optional `texto`, `modo` `junto`, `uma` or `debate`, `rodadas` 2 to 10 for a debate) |
+| `chats/<id>/convidar` | POST | call another AI into the chat (`agente`, `conta`, `modelo`, `effort` for Claude, optional `texto`, `modo` `junto`, `uma` or `debate`, `rodadas` 2 to 10 or `sem_limite: true` for a debate) |
+| `chats/<id>/assumir` | POST | keep only the other AI: the guest (or the AI given by `agente`, `conta`, `modelo`, `effort`) becomes the chat's own AI |
 | `chats/<id>/convidado` | POST | change the guest's `modelo` or `effort`, or `sair: true` to end join mode |
 | `chats/<id>/debate` | POST | end the debate after the reply that is running |
 | `chats/<id>/duplicar` | POST | copy a chat |

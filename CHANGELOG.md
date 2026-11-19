@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.3.0 (2026-11-19)
+
+New
+
+- **Void theme.** Settings, Theme, **Void**: pitch black everywhere (sidebar, header, menus, dialogs), with a
+  quiet starfield, the curve of a planet glowing just above the message box, and Clawd and the Antigravity mark
+  drifting in the empty space at each side of the chat. They move a little more while a reply is being written.
+  On a phone Clawd stands on the planet next to the token counter.
+- **Smooth scrolling.** The mouse wheel now glides through the chat instead of jumping, and the jump to latest
+  button slides down. Touchpads, code blocks and tool output keep their own scrolling. You can turn it off in
+  Settings, and it follows the system "reduce motion" setting.
+- **Auto scroll setting.** Scroll up to read and the page stays where you are while the reply goes on, with a
+  dot on the jump to latest button when new text arrives. Turn **Auto scroll** off in Settings and the page
+  never moves by itself. Replies also appear more smoothly, a few letters at a time instead of in chunks.
+- **Debates with no limit.** Next to 2 to 10 rounds there is **No limit, until you stop it**. The two AIs go on
+  until you press Stop or **End after this reply**.
+- **Keep only the other AI.** In a chat with two AIs, **Keep only** (in the header and in Call another AI) lets
+  the chat go on with the other AI alone. It becomes the chat's own AI, with its theme, and the one that had the
+  chat can come back later with Call another AI. The new AI reads what it missed by itself.
+- **Remove** (it was Leave) takes the other AI out and the chat's own AI goes on alone.
+
+Changed
+
+- **Call another AI has nothing to fill in.** The other AI reads the whole conversation by itself, so the dialog
+  is just who, the model and how it takes part.
+- **Debates are plain conversations.** Neither AI is told it is a debate or given debate rules: each one just
+  gets the other's reply, as in a normal chat.
+- The chat settings row slides sideways with the mouse wheel and fades at the edge when more is hidden, so
+  **Keep only** and **Remove** are easy to reach on narrow windows.
+
 ## 2.2.0 (2026-11-19)
 
 New

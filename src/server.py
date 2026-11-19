@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes, p
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "2.2.0"
+VERSAO = "2.3.0"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 WIN = os.name == "nt"
@@ -544,6 +544,9 @@ def caminho_chat(cid):
     return CHATS / (cid + ".json")
 
 
+MAX_SIDS_CONV = 200   # sessions of other AIs a chat keeps track of (to hide and delete them with it)
+
+
 def apagar_chats(ids, arquivos=False, sessoes=False):
     feitos, pulados, livres, erros = 0, [], 0, []
     for cid in ids or []:
@@ -565,12 +568,12 @@ def apagar_chats(ids, arquivos=False, sessoes=False):
             outros = set()
             for r in listar_chats():
                 if r["id"] != cid and r["id"] not in ids:
-                    outros |= {r.get("sessao")} | set(r.get("antigas") or [])
+                    outros |= {r.get("sessao")} | set(r.get("antigas") or []) | set(r.get("sids_conv") or [])
             meus = ([] if c.get("fork") else [c.get("sessao")]) + list(c.get("antigas") or [])
             pares = [(c["conta"], x) for x in meus if x and x not in outros]
             # the sessions of the AIs called into this chat (Call another AI), on their own accounts
             cc = c.get("contas_conv") or {}
-            pares += [(cc[x], x) for x in c.get("sids_conv") or [] if x and cc.get(x)]
+            pares += [(cc[x], x) for x in c.get("sids_conv") or [] if x and cc.get(x) and x not in outros]
             for conta_id, sid in dict.fromkeys(pares):
                 if not conta_por_id(conta_id):
                     continue
@@ -1199,8 +1202,10 @@ class Execucao:
         t = self.texto
         if not self.conv:
             nota = nota_anfitriao(self.chat, self.oculta)
-            if nota:
-                t = nota + "\n\n" + (t if self.oculta else "The user's new message:\n" + t)
+            if nota and self.oculta:
+                t = nota + ("\n\n" + t if t else "")
+            elif nota:
+                t = nota + "\n\nThe user's new message:\n" + t
         if self.chat["agente"] == "agy" and not self.chat.get("sessao"):
             nota = " ".join(([DICA] if CFG["padrao"].get("dica", True) else []) + ([DICA_PK] if pk_ativo() else []))
             if nota:
@@ -1547,7 +1552,7 @@ class Execucao:
                     if sid and mesmo_convidado(cv, self.conv):
                         cv["sessao"] = sid
                     if sid:
-                        atual["sids_conv"] = list(dict.fromkeys((atual.get("sids_conv") or []) + [sid]))[-50:]
+                        atual["sids_conv"] = list(dict.fromkeys((atual.get("sids_conv") or []) + [sid]))[-MAX_SIDS_CONV:]
                         cc = atual.get("contas_conv") or {}
                         cc[sid] = self.conv["conta"]
                         atual["contas_conv"] = {k: v for k, v in cc.items() if k in atual["sids_conv"]}
@@ -1555,13 +1560,15 @@ class Execucao:
                     atual["sessao"] = self.chat.get("sessao", atual.get("sessao", ""))
                     if self.iniciou:
                         atual.pop("fork", None)  # the branch exists now, under its own session id
+                    if not self.msg["erro"] and not self.parado:
+                        atual.pop("ponte", None)  # what it missed before Keep only went in with this reply
                 atual["mensagens"].append(self.msg)
                 db = atual.get("debate")
                 if db and (self.parado or self.msg["erro"]):
                     atual.pop("debate", None)
                 elif db and self.debate:
                     db["feitas"] = int(db.get("feitas") or 0) + 1
-                    if db["feitas"] >= int(db.get("total") or 0):
+                    if int(db.get("total") or 0) and db["feitas"] >= int(db["total"]):   # total 0: no limit
                         atual.pop("debate", None)
                 renomear = not self.conv and atual.pop("renomear_cli", False)
                 nomear = atual.pop("nomear_depois", False) and not self.msg["erro"] and not self.parado
@@ -1803,18 +1810,38 @@ def enviar(cid, texto, anexos_ids, substitui=None, auto=False, oculta=False, deb
     return ex
 
 
+def _anterior(c, i):
+    """The last message before i that the chat's own AI wrote or got straight from you."""
+    i -= 1
+    while i >= 0 and (c["mensagens"][i].get("convidado") or c["mensagens"][i].get("para")):
+        i -= 1
+    return i
+
+
+def _depois_de_assumir(c, i):
+    """Message i comes right after a Keep only, before any reply of the AI that took the chat over."""
+    a = c.get("assumiu")
+    return bool(a) and i >= a["em"] and _anterior(c, i) < a["em"]
+
+
 def _ponto_de_volta(c, i):
     """The reply a branch continues from: the assistant message right before message i."""
     if c["agente"] != "claude":
         raise ValueError("editing and forking work with Claude chats only")
     # replies of another AI (and your messages to it) live in its own session: branch at the last
     # reply of the chat's own AI; the guest's part is passed along again in the next message
-    i -= 1
-    while i >= 0 and (c["mensagens"][i].get("convidado") or c["mensagens"][i].get("para")):
-        i -= 1
+    a = c.get("assumiu")
+    if a and i < a["em"]:
+        return None   # its session does not reach back there: it starts again with the chat up to that point
+    if _depois_de_assumir(c, i):
+        # its session as it stood when it took the chat over (none: it starts again with the whole chat)
+        return a.get("uuid") or None
+    i = _anterior(c, i)
     if i < 0:
         return None
     ant = c["mensagens"][i]
+    if ant.get("sem_ramo"):
+        raise ValueError("this reply was written while it was the second AI in the chat, so it cannot be branched")
     if ant.get("papel") != "assistente" or not ant.get("uuid") or not c.get("sessao"):
         raise ValueError("this part of the conversation is from before Agents Web 1.4, so it cannot be branched")
     return ant["uuid"]
@@ -1846,6 +1873,13 @@ def reenviar(cid, i, texto):
         if not texto.strip() and not anexos:
             raise ValueError("empty message")
         em = _ponto_de_volta(c, i)
+        a = c.get("assumiu")
+        if _depois_de_assumir(c, i):
+            c["ponte"] = a["ponte"] if em else 0   # it gets what it had not seen again
+        elif a and i < a["em"]:
+            # from before the switch: a new session that gets the chat up to here, and the switch point moves here
+            c["assumiu"] = {"em": i, "uuid": "", "ponte": 0}
+            c["ponte"] = 0
         if c.get("sessao"):
             c["antigas"] = list(dict.fromkeys((c.get("antigas") or []) + [c["sessao"]]))[-100:]
         if em:
@@ -1871,6 +1905,9 @@ def bifurcar(cid, i):
         raise ValueError("message not found")
     if not 0 <= i < len(c["mensagens"]) or c["mensagens"][i].get("papel") != "assistente":
         raise ValueError("pick a reply to fork from")
+    a = c.get("assumiu")
+    if a and _anterior(c, i + 1) < a["em"]:
+        raise ValueError("fork from a reply written after the chat switched AI")
     em = _ponto_de_volta(c, i + 1)
     n = novo_chat({**{k: c[k] for k in ("agente", "conta", "modelo", "perm", "effort", "cwd")},
                    "titulo": ("Fork of " + c["titulo"])[:120], "sessao": c.get("sessao", "")})
@@ -2162,7 +2199,9 @@ def proxima_fila(cid, atual):
 # ---------------------------------------------------------------- Call another AI
 # A second AI joins the chat: it reads the conversation so far (or only what it has not seen yet, in
 # its own CLI session), replies in the same chat, and the chat's own AI gets that reply with your next
-# message. A debate goes back and forth by itself for a set number of replies.
+# message. A debate goes back and forth by itself, for a set number of replies or until you stop it, and
+# each AI only gets the other's reply (no instructions about debating). Keep only swaps the two: the guest
+# becomes the chat's own AI and gets, once, the part of the chat its session never saw.
 NOME_AG = {"claude": "Claude", "agy": "Antigravity"}
 CONV_MAX = 60_000     # characters of conversation passed along in one go (the newest part wins)
 CONV_MSG = 8_000      # characters of one message
@@ -2224,23 +2263,39 @@ def transcricao(msgs, anfitriao):
 
 def nota_anfitriao(c, oculta):
     """What the chat's own AI missed: the other AI's replies (and your messages to it) since its last reply
-    that went through (a reply that failed or was stopped may never have reached its session)."""
+    that went through (a reply that failed or was stopped may never have reached its session). Right after
+    Keep only, everything from where its session stood."""
     msgs = c["mensagens"] if oculta else c["mensagens"][:-1]
-    i = _ultimo(msgs, lambda m: m.get("papel") == "assistente" and not m.get("convidado") and not m.get("erro"))
-    novas = [m for m in msgs[i + 1:] if m.get("convidado") or m.get("para")]
     cv = c.get("convidado") if (c.get("convidado") or {}).get("agente") in NOME_AG else None
     eu, g = nomes_ias(c, cv) if cv else (NOME_AG[c["agente"]], "")
     equipe = ""
     if c.get("duo") and cv and not oculta:
         equipe = (f"[Agents Web: {g} is in this chat with you as a team. It answers each message of the user right "
                   f"after you, with your reply in front of it, so cover the main answer and leave room for it.]")
+    ponte = c.get("ponte")
+    if isinstance(ponte, int) and not isinstance(ponte, bool) and ponte >= 0:
+        novas = msgs[ponte:]
+        if not novas:
+            return equipe
+        outros = list(dict.fromkeys(m["convidado"].get("nome") or "another AI" for m in novas if m.get("convidado")))
+        quem = " and ".join(outros) or "another AI"
+        if c.get("sessao"):
+            topo = (f"[Agents Web: you were the second AI in this chat, next to {quem}. The user now goes on with "
+                    f"you alone. What was said since your last reply:]")
+        else:
+            topo = (f"[Agents Web: the user was chatting with {quem} in a web interface on their PC and now goes on "
+                    f"with you, {eu}, alone. Your tools work on this PC as usual. The conversation so far:]")
+        return (equipe + "\n\n" if equipe else "") + f"{topo}\n\n<conversation>\n{transcricao(novas, eu)}\n</conversation>"
+    i = _ultimo(msgs, lambda m: m.get("papel") == "assistente" and not m.get("convidado") and not m.get("erro"))
+    novas = [m for m in msgs[i + 1:] if m.get("convidado") or m.get("para")]
     if not novas:
         return equipe
     nomes = list(dict.fromkeys(m["convidado"].get("nome") or "another AI" for m in novas if m.get("convidado")))
     quem = " and ".join(nomes) or "another AI"
+    lingua = " Reply in the user's language." if oculta else ""   # a turn with no message of the user's
     return ((equipe + "\n\n" if equipe else "") +
-            f"[Agents Web: the user called {quem} into this chat as a second AI. What was said there since "
-            f"your last reply:]\n\n<conversation>\n{transcricao(novas, eu)}\n</conversation>")
+            f"[Agents Web: the user called {quem} into this chat as a second AI.{lingua} New since your last reply:]"
+            f"\n\n<conversation>\n{transcricao(novas, eu)}\n</conversation>")
 
 
 EQUIPE = ("[You and {h} are a team in this chat. Each message of the user goes to both of you: {h} answers first "
@@ -2262,16 +2317,13 @@ def texto_convidado(c, conv, pedido, db, duo=False):
     else:
         t = (f"[Agents Web: new messages in the chat since your last reply:]\n\n<conversation>\n{conversa}\n"
              "</conversation>") if conversa else ""
-    if db:
-        t += (f"\n\n[A back and forth between you and {h} with the user watching, reply "
-              f"{int(db.get('feitas') or 0) + 1} of {db.get('total')}. Talk to {h} directly, answer its points, "
-              "say where you disagree instead of agreeing to be polite, and keep it short.]")
+    # a debate adds nothing about debating: after its first reply each AI only gets the other's
     equipe = duo and not db
     if equipe:
         t += "\n\n" + EQUIPE.format(h=h)
     if pedido:
         t += f"\n\nThe user asks you:\n{pedido}"
-    elif not equipe and (not db or novo):
+    elif not equipe and (not db or not int(db.get("feitas") or 0)):
         t += (f"\n\nGive your own view on this conversation, mainly on {h}'s last reply: what you agree with, "
               "what you would do differently and what is missing. Reply in the user's language.")
     return t.strip()
@@ -2341,11 +2393,16 @@ def convidar(cid, d):
         rodadas = max(0, min(DEBATE_MAX, int(d.get("rodadas") or 0)))
     except (TypeError, ValueError):
         rodadas = 0
-    modo = d.get("modo") if d.get("modo") in ("junto", "uma", "debate") else ("debate" if rodadas else "uma")
+    sem_limite = d.get("sem_limite") is True
+    modo = d.get("modo") if d.get("modo") in ("junto", "uma", "debate") else \
+        ("debate" if rodadas or sem_limite else "uma")
     if modo != "debate":
+        rodadas, sem_limite = 0, False
+    elif sem_limite:
         rodadas = 0
     elif not rodadas:
         rodadas = 3
+    debate = modo == "debate"
     with trava:
         ex = EXECS.get(cid)
         if ex and not ex.acabou:
@@ -2365,8 +2422,8 @@ def convidar(cid, d):
             conv["permitidos"] = []
         conv["perm"] = perm
         c["convidado"] = conv
-        if rodadas:
-            c["debate"] = {"total": rodadas * 2, "feitas": 0}
+        if debate:
+            c["debate"] = {"total": rodadas * 2, "feitas": 0}   # total 0: until you stop it
         else:
             c.pop("debate", None)
         if modo == "junto":
@@ -2379,7 +2436,7 @@ def convidar(cid, d):
             return None   # joined: it answers from your next message on
         gravar_chat(c)
         # trava is reentrant: nothing starts in between
-        return rodar_convidado(cid, pedido, debate=bool(rodadas), duo=modo == "junto")
+        return rodar_convidado(cid, pedido, debate=debate, duo=modo == "junto")
 
 
 def esforco_resposta(chat, modelo):
@@ -2444,6 +2501,90 @@ def config_convidado(cid, d):
         return c
 
 
+def assumir(cid, d):
+    """Keep only the other AI: it becomes the chat's own AI (its account, model, permissions and session) and
+    the one that had the chat becomes the guest, out of the chat, so Call another AI can bring it back where it
+    left off. With an AI that is not in the chat yet (from the dialog), it takes over with the whole chat."""
+    with trava:
+        ex = EXECS.get(cid)
+        if ex and not ex.acabou:
+            raise ValueError("wait for the current reply to finish")
+        c = ler_chat(cid)
+        if d.get("agente"):
+            agente = d["agente"]
+            if agente not in NOME_AG:
+                raise ValueError("pick the AI to keep")
+            conta = conta_por_id(str(d["conta"])) if d.get("conta") else \
+                next((x for x in CFG["contas"] if x["agente"] == agente), None)
+            if not conta:
+                raise ValueError("that account was removed. Pick another one")
+            if conta["agente"] != agente:
+                raise ValueError("this account does not belong to the selected AI")
+            conv = c.get("convidado") or {}
+            if not mesmo_convidado(conv, {"agente": agente, "conta": conta["id"]}):
+                if agente == c["agente"] and conta["id"] == c.get("conta"):
+                    raise ValueError("that is already the AI of this chat")
+                conv = {"agente": agente, "conta": conta["id"], "sessao": "", "permitidos": [],
+                        "perm": perm_convidado(c, agente)}
+            if "modelo" in d:
+                conv["modelo"] = str(d.get("modelo") or "")[:200]
+            if "effort" in d:
+                conv["effort"] = d["effort"] if agente == "claude" and d.get("effort") in ESFORCOS else ""
+            c["convidado"] = conv
+        conv = c.get("convidado")
+        if not conv:
+            raise ValueError("there is no other AI in this chat")
+        nova = conta_por_id(conv.get("conta", ""))
+        if not nova:
+            raise ValueError("the account of the other AI was removed. Call it again")
+        msgs = c["mensagens"]
+        sid = conv.get("sessao") or ""
+        if sid and _ultimo(msgs, lambda m: mesmo_convidado(m.get("convidado"), conv)) < 0:
+            sid = ""   # its replies were edited away
+        if conv["agente"] == "claude" and sid and sid in ativas_claude(nova):
+            raise ValueError("the other AI's conversation is open in a terminal right now. Close it there first")
+        # where its session stands: its last reply that went through
+        j = _ultimo(msgs, lambda m: mesmo_convidado(m.get("convidado"), conv) and not m.get("erro")) if sid else -1
+        ponto = (msgs[j].get("uuid") or "") if j >= 0 else ""
+        velho = {"agente": c["agente"], "conta": c.get("conta", ""), "modelo": c.get("modelo", ""),
+                 "effort": c.get("effort", "") if c["agente"] == "claude" else "", "perm": c.get("perm", ""),
+                 "permitidos": list(c.get("permitidos") or []),
+                 # a fork that never replied still shares its parent's session: that one stays the parent's
+                 "sessao": "" if c.get("fork") else c.get("sessao", "")}
+        # the sessions of the AI that leaves are a guest's now: deleting the chat still finds them, on its account
+        sids = [x for x in [velho["sessao"]] + list(c.get("antigas") or []) if x]
+        sc = list(dict.fromkeys([x for x in c.get("sids_conv") or [] if x != sid] + sids))[-MAX_SIDS_CONV:]
+        cc = {**(c.get("contas_conv") or {}), **{x: velho["conta"] for x in sids}}
+        c["sids_conv"], c["contas_conv"] = sc, {k: v for k, v in cc.items() if k in sc}
+        for m in msgs:
+            if m.get("papel") != "assistente":
+                continue
+            if mesmo_convidado(m.get("convidado"), conv):
+                m.pop("convidado", None)
+                m.pop("duo", None)
+                if m.pop("uuid", None):
+                    m["sem_ramo"] = True   # from its time as the guest: its session cannot branch there
+            elif not m.get("convidado"):
+                m["convidado"] = {"agente": velho["agente"], "conta": velho["conta"], "nome": ""}
+                m["anfitriao"] = True   # written while it was the chat's own AI
+        c.update(agente=conv["agente"], conta=conv["conta"], modelo=conv.get("modelo", ""),
+                 effort=conv.get("effort", "") if conv["agente"] == "claude" else "", perm=conv.get("perm", ""),
+                 permitidos=list(conv.get("permitidos") or []), sessao=sid, antigas=[], duo=False)
+        for k in ("fork", "debate", "renomear_cli", "tentadas"):
+            c.pop(k, None)
+        velho["nome"] = nomes_ias(c, velho)[1]
+        for m in msgs:
+            g = m.get("convidado")
+            if g and m.get("anfitriao") and mesmo_convidado(g, velho) and not g.get("nome"):
+                g["nome"] = velho["nome"]
+        c["convidado"] = velho
+        c["ponte"] = j + 1 if sid else 0
+        c["assumiu"] = {"em": len(msgs), "uuid": ponto, "ponte": c["ponte"]}
+        c["ajustado"] = True
+        gravar_chat(c)
+        return c
+
+
 def seguir_debate(cid, atual):
     """The next debate turn, run by the reply that just ended (before its "fim" event, like the queue)."""
     with trava:
@@ -2454,15 +2595,16 @@ def seguir_debate(cid, atual):
         if not c.get("debate") or not c.get("convidado") or not c["mensagens"]:
             return False
         vez_do_convidado = not c["mensagens"][-1].get("convidado")
-        if not vez_do_convidado:
-            _, g = nomes_ias(c, c["convidado"])
+        if not vez_do_convidado and not nota_anfitriao(c, True):
+            c.pop("debate", None)   # nothing new for the chat's own AI: a blank turn would only fail
+            gravar_chat(c)
+            return False
     try:
         if vez_do_convidado:
             rodar_convidado(cid, "", atual, debate=True)
             return True
-        enviar(cid, f"[A back and forth between you and {g} with the user watching. Talk to {g} directly, answer "
-                    "its points, say where you disagree instead of agreeing to be polite, and keep it short. "
-                    "Reply in the user's language.]", [], atual, oculta=True, debate=True)
+        # the chat's own AI gets the other one's reply and nothing else
+        enviar(cid, "", [], atual, oculta=True, debate=True)
         return True
     except Exception:
         with trava:
@@ -4210,6 +4352,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 return self.resp(200, {"ok": True, "rodando": bool(ex)})
             if acao == "convidado":
                 return self.resp(200, config_convidado(cid, self.corpo_json()))
+            if acao == "assumir":
+                return self.resp(200, assumir(cid, self.corpo_json()))
             if acao == "debate":
                 # end the debate after the reply that is running now
                 with trava:

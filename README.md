@@ -14,7 +14,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 ## Features
 
 - **Both agents, one page.** Switch between Claude Code and Antigravity per chat, each with its own theme.
-- **Call another AI.** A button in the chat header brings a second AI into the conversation: Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. It can join the chat as a team (every message goes to both, under a joined theme with both marks), answer once, or debate the chat's AI by itself. Each reply shows who wrote it, with its model, effort and color.
+- **Call another AI.** A button in the chat header brings a second AI into the conversation: Antigravity into a Claude chat, Claude into an Antigravity chat, or another Claude account. It reads the conversation by itself, so there is nothing to explain. It can join the chat as a team (every message goes to both, under a joined theme with both marks), answer once, or debate the chat's AI by itself for a few rounds or until you stop it. **Keep only** goes on with the other AI alone, **Remove** takes it out. Each reply shows who wrote it, with its model, effort and color.
 - **Several Claude accounts.** Add extra Claude logins and pick the account per chat. Each account has its own model, effort and permission choices. When one account reaches its usage limit, the chat continues the same conversation on another one, with one click or by itself. All accounts share one Claude memory.
 - **Real usage limits.** Shows session and weekly limits as reported by the CLIs themselves, plus tokens per model.
 - **Terminal conversations.** Your existing `claude` and `agy` sessions show up in the sidebar. You can open, continue, rename or delete them, and a Claude chat can move to another working folder.
@@ -24,7 +24,7 @@ you already use, so your existing subscriptions, settings and terminal sessions 
 - **Edit, retry and fork (Claude).** Change a message you sent and get a new reply, or fork any reply into a new chat. The original conversation stays in Claude Code.
 - **Root approvals in the browser.** When an agent runs `pkexec`, a card shows the command and you approve it with your password (https or the PC only) or deny it.
 - **Smart titles.** New chats get a short title written by Claude Haiku from your first message, shown while the reply is still coming in. One click in Settings names your older chats too. Empty chats you leave behind do not pile up in the sidebar.
-- **Room to read.** Fold the chat list into a thin icon rail (Ctrl+B), pick a Normal, Wide or Full chat width and one of four text sizes, in a dark or light theme (or follow the system).
+- **Room to read.** Fold the chat list into a thin icon rail (Ctrl+B), pick a Normal, Wide or Full chat width and one of four text sizes, in a dark, light or pitch black **Void** theme (or follow the system). Scrolling glides, and **Auto scroll** can be turned off so the page never moves while you read.
 - **Code that reads well.** Syntax highlighting for the common languages without any library, Copy and Wrap buttons on every block, and runs of tool calls folded into one summary line with the lines changed.
 - **Saved prompts.** Keep the prompts you reuse and insert one with "/" at the start of a message or the prompts button. They live on the PC, so the phone has them too.
 - **Workflow helpers.** Message queue while the agent works, full text search, pinned chats, recent chats on the start screen, keyboard shortcuts, an image viewer, a draft kept per chat, export as Markdown, working folder picker with "New folder", file uploads, resizable sidebar, a jump to latest button and a stop button.
@@ -213,19 +213,24 @@ run agents in folders you trust.
 ### Call another AI
 
 **Call another AI**, in the chat header, brings a second AI into the chat you are in. Pick who (Antigravity,
-Claude, or another Claude account), the model, the effort (for Claude) and how it takes part.
+Claude, or another Claude account), the model, the effort (for Claude) and how it takes part. There is nothing
+to write: it reads the whole conversation by itself.
 
 - **Join the chat** (the default). The two work as a team: each message you send goes to both, the chat's own
   AI answers first and the other one right after, with that reply in front of it, so it builds on it instead of
   repeating it. The page switches to a joined theme with both marks, and the header shows both AIs with the
-  guest's model, effort and a **Leave** button. Queued messages wait for both replies.
+  guest's model and effort, **Keep only** and **Remove**. Queued messages wait for both replies.
 - **One reply.** It reads the chat so far and answers once, about what you ask it or, left empty, with its own
   view on the last reply. The chat's own AI gets that answer, and your message to it, along with your next
   message.
-- **Debate.** The two take turns by themselves for 2 to 10 rounds (one reply from each per round), answering
-  each other's points. A bar above the message box shows the progress. **End after this reply** lets the reply
+- **Debate.** The two take turns by themselves for 2 to 10 rounds (one reply from each per round) or with no
+  limit until you stop it. Neither is told it is a debate: each one just gets the other's reply. A bar above the message box shows the progress. **End after this reply** lets the reply
   being written finish and stops there, and Stop ends it at once. A message you send during a debate waits for
   the current reply, goes to the chat's own AI, and the debate then goes on.
+
+**Keep only** (in the header or the dialog) lets the chat go on with the other AI alone: it becomes the chat's
+own AI, catches up on what it missed by itself, and the first one can be called back later. **Remove** takes the
+other AI out and the chat's own AI goes on alone.
 
 Every reply shows the AI, the model and the effort that wrote it, and in chats with two AIs each has its own
 color line (orange for Claude, blue to purple for Antigravity).
@@ -243,7 +248,8 @@ in the page moves to the new branch, and the original conversation stays in Clau
 
 ### Settings
 
-Settings covers the appearance (Dark, Light or System theme, chat width, text size, the chat list and animations),
+Settings covers the appearance (Dark, Void, Light or System theme, chat width, text size, smooth scrolling, auto
+scroll, the chat list and animations),
 saved prompts, the alert when a reply is ready (chime, vibration and notification), the dictation language,
 **Rich replies** (a short hint that tells agents about the previews, about 250 tokens),
 **Root password here** (send `pkexec` prompts to the page instead of the desktop password dialog),

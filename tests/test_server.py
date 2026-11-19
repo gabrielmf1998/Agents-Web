@@ -16,6 +16,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+DEBATE_MAX = 10   # the server's cap on counted debates (rounds)
 import textwrap
 import time
 import unittest
@@ -1092,15 +1093,188 @@ class TestServidor(unittest.TestCase):
         self.assertNotIn("debate", chat)   # 4 replies done, it ended by itself
         self.assertFalse(chat["rodando"])
         self.assertEqual(len(self.s.args_claude()) - n_claude, 2)
-        # Claude's debate turns: no message of yours, the other AI's reply goes in
+        # Claude's debate turns: no message of yours, only the other AI's reply goes in
         dado = self.ultimo_prompt_claude()
         self.assertIn("### Antigravity\nagy:", dado)
-        self.assertIn("Talk to Antigravity directly", dado)
+        self.assertTrue(dado.endswith("</conversation>"))
+        # nothing tells either of them it is a debate
         p1 = self.s.args_agy()[-2]
-        self.assertIn("reply 1 of 4", p1[p1.index("-p") + 1])
         p2 = self.s.args_agy()[-1]
-        self.assertIn("reply 3 of 4", p2[p2.index("-p") + 1])
+        for t in (dado, p1[p1.index("-p") + 1], p2[p2.index("-p") + 1]):
+            for x in ("debate", "back and forth", "disagree", "reply 1 of", "Talk to"):
+                self.assertNotIn(x, t)
+        self.assertIn("Give your own view", p1[p1.index("-p") + 1])   # its first turn, like One reply
+        self.assertNotIn("Give your own view", p2[p2.index("-p") + 1])
+        self.assertIn("### Claude\necho:", p2[p2.index("-p") + 1])
         self.assertEqual(p2[p2.index("--conversation") + 1], "agy-conv-1")
+
+    def test_debate_sem_limite_ate_voce_parar(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "vim or emacs"})
+        self.s.espera_parado(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "modo": "debate",
+                                                       "sem_limite": True})
+        self.assertEqual(self.s.api(f"/api/chats/{c['id']}")["debate"]["total"], 0)
+        # past the 10 round cap of a counted debate
+        self.espera_n_vivo(c["id"], 2 + DEBATE_MAX * 2 + 2, 90)
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        self.assertEqual(chat["debate"]["total"], 0)
+        self.assertGreaterEqual(chat["debate"]["feitas"], DEBATE_MAX * 2)
+        self.s.api(f"/api/chats/{c['id']}/debate", {})   # End after this reply
+        self.s.espera_parado(c["id"])
+        time.sleep(0.6)
+        chat = self.s.api(f"/api/chats/{c['id']}")
+        self.assertNotIn("debate", chat)
+        self.assertFalse(chat["rodando"])
+        n = len(chat["mensagens"])
+        time.sleep(0.8)
+        self.assertEqual(len(self.s.api(f"/api/chats/{c['id']}")["mensagens"]), n)
+
+    def espera_n_vivo(self, cid, n, limite=30):
+        """At least n messages, while the chat may still be running."""
+        fim = time.time() + limite
+        while time.time() < fim:
+            c = self.s.api(f"/api/chats/{cid}")
+            if len(c["mensagens"]) >= n:
+                return c
+            time.sleep(0.1)
+        raise AssertionError(f"expected {n} messages, got {len(c['mensagens'])}")
+
+    # ---------------------------------------------------------------- Keep only
+    def test_ficar_so_com_a_outra_ia(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "one"})
+        self.s.espera_parado(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "agy", "conta": "google", "modo": "uma"})
+        self.espera_n(c["id"], 3)
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "two"})
+        self.espera_n(c["id"], 5)   # Claude alone again: Antigravity has not seen "two" nor its reply
+        r = self.s.api(f"/api/chats/{c['id']}/assumir", {})
+        self.assertEqual((r["agente"], r["conta"], r["sessao"]), ("agy", "google", "agy-conv-1"))
+        self.assertFalse(r["duo"])
+        self.assertEqual(r["convidado"]["agente"], "claude")
+        self.assertEqual(r["convidado"]["conta"], "claude1")
+        self.assertEqual(r["convidado"]["sessao"], SID)
+        self.assertEqual(r["convidado"]["nome"], "Claude")
+        self.assertEqual(r["ponte"], 3)
+        quem = [(m.get("convidado") or {}).get("agente", "eu") for m in r["mensagens"] if m["papel"] == "assistente"]
+        self.assertEqual(quem, ["claude", "eu", "claude"])
+        self.assertTrue(all(m.get("anfitriao") for m in r["mensagens"] if m.get("convidado")))
+        # Claude's session is a guest's now: still deleted with the chat, still not listed as a terminal one
+        self.assertIn(SID, r["sids_conv"])
+        self.assertEqual(r["contas_conv"][SID], "claude1")
+        self.assertNotIn("agy-conv-1", r["sids_conv"])
+        self.assertFalse(any(x.get("sid") in (SID, "agy-conv-1") for x in self.s.api("/api/cli/lista")))
+        # its next message carries what it missed, once
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "three"})
+        self.espera_n(c["id"], 7)
+        args = self.s.args_agy()[-1]
+        self.assertEqual(args[args.index("--conversation") + 1], "agy-conv-1")
+        dado = args[args.index("-p") + 1]
+        self.assertIn("you were the second AI in this chat, next to Claude", dado)
+        self.assertIn("### User\ntwo", dado)
+        self.assertIn("### Claude\necho: ", dado)   # Claude's reply to "two" (the fake echoes the first line)
+        self.assertNotIn("### User\none", dado)   # it had seen that already
+        self.assertTrue(dado.endswith("The user's new message:\nthree"))
+        self.assertNotIn("ponte", self.s.api(f"/api/chats/{c['id']}"))
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "four"})
+        self.espera_n(c["id"], 9)
+        args = self.s.args_agy()[-1]
+        self.assertEqual(args[args.index("-p") + 1], "four")
+        # Claude comes back as the guest, where it left off
+        n = len(self.s.args_claude())
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": "claude1", "modo": "uma"})
+        chat = self.espera_n(c["id"], 10)
+        self.assertEqual(len(self.s.args_claude()), n + 1)
+        self.assertEqual(self.s.args_claude()[-1][self.s.args_claude()[-1].index("--resume") + 1], SID)
+        dado = self.ultimo_prompt_claude()
+        self.assertIn("### User\nthree", dado)
+        self.assertNotIn("### User\ntwo", dado)
+        self.assertEqual(chat["mensagens"][-1]["convidado"]["agente"], "claude")
+        self.assertNotIn("anfitriao", chat["mensagens"][-1])
+
+    def test_ficar_so_com_uma_ia_que_nao_estava_no_chat(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "hello there"})
+        self.s.espera_parado(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/assumir", {"agente": "agy", "conta": "claude1"}, esperado=400)
+        self.s.api(f"/api/chats/{c['id']}/assumir", {"agente": "claude", "conta": "claude1"}, esperado=400)
+        r = self.s.api(f"/api/chats/{c['id']}/assumir", {"agente": "agy", "conta": "google", "modelo": "gemini-x"})
+        self.assertEqual((r["agente"], r["sessao"], r["modelo"], r["ponte"]), ("agy", "", "gemini-x", 0))
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "go on"})
+        self.espera_n(c["id"], 4)
+        args = self.s.args_agy()[-1]
+        self.assertNotIn("--conversation", args)
+        self.assertEqual(args[args.index("--model") + 1], "gemini-x")
+        dado = args[args.index("-p") + 1]
+        self.assertIn("the user was chatting with Claude in a web interface", dado)
+        self.assertIn("### User\nhello there", dado)
+        self.assertIn("### Claude\necho: hello there", dado)
+        self.assertTrue(dado.endswith("The user's new message:\ngo on"))
+
+    def test_ficar_so_com_a_outra_e_editar_a_primeira_mensagem(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "alpha"})
+        self.s.espera_parado(c["id"])
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": "claude1", "modo": "uma",
+                                                       "modelo": "claude-other"})
+        chat = self.espera_n(c["id"], 3)
+        uuid_conv = chat["mensagens"][2]["uuid"]
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "beta"})
+        self.espera_n(c["id"], 5)
+        r = self.s.api(f"/api/chats/{c['id']}/assumir", {})
+        self.assertEqual(r["modelo"], "claude-other")
+        self.assertTrue(r["mensagens"][2].get("sem_ramo"))
+        self.assertNotIn("uuid", r["mensagens"][2])
+        self.assertEqual(r["assumiu"], {"em": 5, "uuid": uuid_conv, "ponte": 3})
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "gamma"})
+        chat = self.espera_n(c["id"], 7)
+        # a reply from its time as the guest cannot be branched from
+        self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 2}, esperado=400)
+        # editing the first message after the switch branches where it stood, and passes the missed part again
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 5, "texto": "gamma 2"})
+        chat = self.espera_n(c["id"], 7)
+        ultimo = self.s.args_claude()[-1]
+        self.assertEqual(ultimo[ultimo.index("--resume-session-at") + 1], uuid_conv)
+        self.assertEqual(ultimo[ultimo.index("--model") + 1], "claude-other")
+        dado = self.ultimo_prompt_claude()
+        self.assertIn("### User\nbeta", dado)
+        self.assertTrue(dado.endswith("gamma 2"))
+        self.assertNotIn("ponte", chat)
+        # editing a message from before the switch starts it again with the chat up to there
+        self.s.api(f"/api/chats/{c['id']}/reenviar", {"indice": 3, "texto": "beta 2"})
+        chat = self.espera_n(c["id"], 5)
+        ultimo = self.s.args_claude()[-1]
+        self.assertNotIn("--resume", ultimo)
+        self.assertEqual(ultimo[ultimo.index("--model") + 1], "claude-other")
+        dado = self.ultimo_prompt_claude()
+        self.assertIn("now goes on with you", dado)
+        self.assertIn("### User\nalpha", dado)
+        self.assertTrue(dado.endswith("beta 2"))
+        self.assertNotIn("ponte", chat)
+        self.assertEqual(chat["assumiu"]["em"], 3)
+        # its new reply is a normal branch point again
+        self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 4})
+        self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 1}, esperado=400)
+
+    def test_ficar_so_com_a_outra_nao_apaga_a_sessao_de_um_fork(self):
+        c = self.novo_chat()
+        self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "alpha"})
+        self.s.espera_parado(c["id"])
+        sid = self.s.api(f"/api/chats/{c['id']}")["sessao"]
+        f = self.s.api(f"/api/chats/{c['id']}/bifurcar", {"indice": 1})
+        self.assertEqual(f["sessao"], sid)
+        self.s.api(f"/api/chats/{c['id']}/convidar", {"agente": "claude", "conta": "claude1", "modo": "uma",
+                                                       "modelo": "claude-other"})
+        self.espera_n(c["id"], 3)
+        self.s.api(f"/api/chats/{c['id']}/assumir", {"agente": "claude", "conta": "nope"}, esperado=400)
+        r = self.s.api(f"/api/chats/{c['id']}/assumir", {})
+        self.assertIn(sid, r["sids_conv"])
+        arq = self.s.dir_conta("claude1") / "projects/-tmp-x" / f"{sid}.jsonl"
+        arq.parent.mkdir(parents=True, exist_ok=True)
+        arq.write_text('{"type":"user"}\n')
+        self.s.api("/api/chats/apagar", {"ids": [c["id"]], "sessoes": True})
+        self.assertTrue(arq.exists())   # the fork still continues from it
 
     def test_debate_parar_encerra(self):
         c = self.novo_chat()
