@@ -821,7 +821,7 @@ const LS={get(k,d){try{return localStorage.getItem(k)??d}catch{return d}},set(k,
  addEventListener("resize",()=>{atual=poe(+LS.get("ag.lado",PAD)||PAD)});
 })();
 function toast(s,ms=2800){document.querySelectorAll(".toast").forEach(t=>t.remove());const t=el("div",{class:"toast"},s);document.body.append(t);setTimeout(()=>t.remove(),ms)}
-async function api(cam,corpo){const o={headers:{"X-Token":TOKEN}};if(corpo!==undefined){o.method="POST";o.headers["Content-Type"]="application/json";o.body=JSON.stringify(corpo)}const r=await fetch(cam,o);const j=await r.json().catch(()=>({erro:"Invalid response"}));if(!r.ok)throw new Error(j.erro||r.status);return j}
+async function api(cam,corpo){const o={headers:{"X-Token":TOKEN}};if(corpo!==undefined){o.method="POST";o.headers["Content-Type"]="application/json";o.body=JSON.stringify(corpo)}const r=await fetch(cam,o);const j=await r.json().catch(()=>({erro:"Invalid response"}));if(!r.ok){if(j.sumiu)setTimeout(()=>chatSumiu(j.sumiu));throw new Error(j.erro||r.status)}return j}
 const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
 const plural=(n,s)=>`${n} ${s}${n===1?"":"s"}`;
 
@@ -1445,10 +1445,22 @@ function podaRascunhos(){try{for(let i=localStorage.length-1;i>=0;i--){const k=l
 const CRIADOS=new Set();
 function vazioDescartavel(c){return c&&CRIADOS.has(c.id)&&!c.ajustado&&!c.mensagens.length&&!c.sessao&&!(c.fila||[]).length&&!c.rodando&&!$("#txt").value.trim()&&!PEND.length&&!(EST.fixados||[]).includes(c.id)}
 async function descartaVazio(c){CRIADOS.delete(c.id);try{const r=await api(`/api/chats/${c.id}`);if(r.mensagens.length||r.ajustado||(r.fila||[]).length||r.rodando)return;await api(`/api/chats/${c.id}/apagar`,{});EST.chats=EST.chats.filter(x=>x.id!==c.id);desenharLista()}catch{}}
+/* the server says a chat is gone (deleted on another device, or an old link the browser remembered), whatever
+   asked for it: forget it and, when it was the one on screen (or none was), show the most recent chat, keeping
+   what is typed in the box */
+const SUMIDOS=new Set();
+async function chatSumiu(id){
+ if(SUMIDOS.has(id))return;SUMIDOS.add(id);
+ if(location.hash.includes(id))history.replaceState(null,"",location.pathname+location.search);
+ const naTela=!CHAT||CHAT.id===id;
+ if(CHAT&&CHAT.id===id){const t=$("#txt").value;semChat();$("#txt").value=t;ajusta()}
+ await carregarEstado();   // the list as the server has it now: drops it, its draft and its badge
+ if(naTela&&!CHAT){const o=EST.chats.find(c=>c.id!==id);if(o)abrir(o.id);else desenharMsgs()}
+}
 async function abrir(id,manterLado,origem){
- const antes=CHAT&&CHAT.id;
- if(antes&&antes!==id&&vazioDescartavel(CHAT))descartaVazio(CHAT);
  let novo;try{novo=await api("/api/chats/"+id)}catch(e){toast(cap(e.message));return}
+ const antes=CHAT&&CHAT.id;   // the chat being left, once the new one is surely there
+ if(antes&&antes!==id&&vazioDescartavel(CHAT))descartaVazio(CHAT);
  if(ES){ES.close();ES=null}pararSpin();VIVO=null;
  if(antes!==id&&(antes||!$("#txt").value)){if(antes)guardaRascunho();$("#txt").value=LS.get(RASC+id,"");ajusta()}
  CHAT=novo;

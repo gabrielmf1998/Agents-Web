@@ -8,7 +8,7 @@ import shutil, uuid, urllib.parse, http.server, socketserver, html, mimetypes, p
 import ssl, hmac, hashlib, socket, unicodedata, struct, shlex, sqlite3
 from pathlib import Path
 
-VERSAO = "2.3.0"
+VERSAO = "2.3.1"
 BASE = Path(__file__).resolve().parent
 HOME = Path.home()
 WIN = os.name == "nt"
@@ -603,8 +603,22 @@ def apagar_chats(ids, arquivos=False, sessoes=False):
     return {"apagados": feitos, "pulados": pulados, "liberado": livres, "erros": erros}
 
 
+class ChatSumiu(FileNotFoundError):
+    """A chat that is not there any more (deleted here or on another device, or an old link): the page gets a
+    short message, a 404 and which chat it was, not the path of the file."""
+    def __init__(self, cid):
+        super().__init__(errno.ENOENT, "no chat " + str(cid))
+        self.cid = cid
+
+    def __str__(self):
+        return "this chat no longer exists"
+
+
 def ler_chat(cid):
-    return json.loads(caminho_chat(cid).read_text())
+    try:
+        return json.loads(caminho_chat(cid).read_text())
+    except FileNotFoundError:
+        raise ChatSumiu(cid) from None
 
 
 def gravar_chat(chat):
@@ -4076,6 +4090,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 return
             self.quem = quem
             return self.api(metodo, p)
+        except ChatSumiu as e:
+            return self.resp(404, {"erro": str(e), "sumiu": e.cid})
         except (ValueError, FileNotFoundError, KeyError) as e:
             return self.resp(400, {"erro": str(e)})
         except PermissionError as e:

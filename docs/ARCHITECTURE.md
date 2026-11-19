@@ -256,6 +256,10 @@ All endpoints live under `/api/` and need the `X-Token` header (the PC token, or
 paired phone). Request bodies and responses are JSON. Names are in Portuguese because the project started
 that way. They are stable identifiers, not text shown to users.
 
+Errors come back as `{"erro": "<message>"}` with a 4xx or 5xx status. A chat that does not exist (deleted, or
+an old link) is a 404 with `"sumiu": "<chat id>"`, whatever endpoint ran into it, and the page then forgets
+that chat and opens the most recent one if it was on screen.
+
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `estado` | GET | accounts (and the main Claude account, `principal`), chats, limits, defaults, network info, pending root requests, pinned chats, saved prompts |

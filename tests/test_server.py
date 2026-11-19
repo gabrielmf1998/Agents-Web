@@ -476,6 +476,12 @@ class TestServidor(unittest.TestCase):
         self.assertIn(b"removed", r[1])
         self.assertEqual(len(self.s.args_claude()), antes)
 
+    def test_chat_que_nao_existe(self):
+        r = self.s.api("/api/chats/ffffffffffff", esperado=404)
+        self.assertEqual(r["erro"], "this chat no longer exists")
+        self.assertEqual(r["sumiu"], "ffffffffffff")   # the page forgets that chat, whatever asked for it
+        self.s.api("/api/chats/ffffffffffff/enviar", {"texto": "hi"}, esperado=404)
+
     def test_busca_duplicar_apagar(self):
         c = self.novo_chat()
         self.s.api(f"/api/chats/{c['id']}/enviar", {"texto": "zebra unicorn"})
@@ -486,7 +492,7 @@ class TestServidor(unittest.TestCase):
         self.assertEqual(d["mensagens"], [])
         r = self.s.api("/api/chats/apagar", {"ids": [c["id"], d["id"]]})
         self.assertEqual(r["apagados"], 2)
-        self.s.api(f"/api/chats/{c['id']}", esperado=400)
+        self.s.api(f"/api/chats/{c['id']}", esperado=404)
         self.s.api("/api/chats/apagar", {"ids": ["../../etc"]}, esperado=400)
 
     # ---------------------------------------------------------------- approvals, questions, plans

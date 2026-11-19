@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.1 (2026-11-19)
+
+Fixed
+
+- Opening an old link to a chat that was deleted (the browser may still suggest it while you type the address)
+  showed a raw "No such file or directory" error over an empty page. Now it says "This chat no longer exists"
+  and opens your most recent chat. The same happens when you click a chat that was just deleted on another
+  device.
+
 ## 2.3.0 (2026-11-19)
 
 New
